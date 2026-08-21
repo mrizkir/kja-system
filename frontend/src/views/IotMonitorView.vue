@@ -1,0 +1,263 @@
+<script setup>
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import Badge from 'primevue/badge'
+import Button from 'primevue/button'
+import InputNumber from 'primevue/inputnumber'
+import Message from 'primevue/message'
+import Select from 'primevue/select'
+import Toast from 'primevue/toast'
+import { useToast } from 'primevue/usetoast'
+
+const POLL_MS = 5_000
+const FRESH_MS = 2 * 60 * 1000
+const STALE_MS = 15 * 60 * 1000
+
+const toast = useToast()
+const readings = ref([])
+const loading = ref(true)
+const error = ref(null)
+const lastPollAt = ref(null)
+const sending = ref(false)
+const lastIngest = ref(null)
+
+const form = reactive({
+  kja_id: 1,
+  ph: 8.0,
+  temperature: 27.0,
+  salinity: 30.0,
+  turbidity: 10.0
+})
+
+const kjaOptions = [
+  { label: 'KJA-01', value: 1 },
+  { label: 'KJA-02', value: 2 },
+  { label: 'KJA-03', value: 3 },
+  { label: 'KJA-04', value: 4 }
+]
+
+let pollTimer = null
+
+function ageMs(iso) {
+  if (!iso) return Number.POSITIVE_INFINITY
+  return Date.now() - new Date(iso).getTime()
+}
+
+function freshness(iso) {
+  const age = ageMs(iso)
+  if (age <= FRESH_MS) return { label: 'Segar', severity: 'success', hint: '< 2 menit' }
+  if (age <= STALE_MS) return { label: 'Lama', severity: 'warn', hint: '< 15 menit' }
+  return { label: 'Stale', severity: 'danger', hint: '> 15 menit / seed' }
+}
+
+function formatTime(iso) {
+  if (!iso) return '—'
+  return (
+    new Date(iso).toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }) + ' WIB'
+  )
+}
+
+function formatAge(iso) {
+  const age = ageMs(iso)
+  if (!Number.isFinite(age)) return '—'
+  const sec = Math.floor(age / 1000)
+  if (sec < 60) return `${sec}s lalu`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m lalu`
+  const hr = Math.floor(min / 60)
+  return `${hr}j ${min % 60}m lalu`
+}
+
+const rows = computed(() =>
+  [...readings.value]
+    .sort((a, b) => a.kja_id - b.kja_id)
+    .map((r) => ({
+      ...r,
+      freshness: freshness(r.timestamp),
+      ageLabel: formatAge(r.timestamp),
+      timeLabel: formatTime(r.timestamp)
+    }))
+)
+
+const freshCount = computed(() => rows.value.filter((r) => r.freshness.label === 'Segar').length)
+
+async function poll() {
+  try {
+    const response = await fetch('/api/sensor/latest')
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    readings.value = await response.json()
+    error.value = null
+    lastPollAt.value = new Date()
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function sendTestIngest() {
+  sending.value = true
+  try {
+    const response = await fetch('/api/sensor/ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kja_id: form.kja_id,
+        ph: form.ph,
+        temperature: form.temperature,
+        salinity: form.salinity,
+        turbidity: form.turbidity
+      })
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP ${response.status}`)
+    }
+    lastIngest.value = data
+    toast.add({
+      severity: 'success',
+      summary: 'Ingest OK',
+      detail: `KJA-${String(form.kja_id).padStart(2, '0')} tersimpan`,
+      life: 4000
+    })
+    await poll()
+  } catch (err) {
+    toast.add({
+      severity: 'error',
+      summary: 'Ingest gagal',
+      detail: err.message,
+      life: 6000
+    })
+  } finally {
+    sending.value = false
+  }
+}
+
+onMounted(() => {
+  poll()
+  pollTimer = setInterval(poll, POLL_MS)
+})
+
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer)
+})
+</script>
+
+<template>
+  <div class="dashboard iot-page">
+    <Toast position="top-right" />
+
+    <header class="dashboard-header">
+      <div>
+        <h1 class="dashboard-title">Monitor IoT</h1>
+        <p class="dashboard-subtitle">
+          Pantau reading terakhir dari receiver — terpisah dari dashboard operasional
+        </p>
+      </div>
+      <div class="header-meta">
+        <nav class="app-nav">
+          <RouterLink class="nav-link" to="/">Dashboard</RouterLink>
+          <RouterLink class="nav-link" to="/iot">Monitor IoT</RouterLink>
+        </nav>
+        <Badge :value="`${freshCount}/${rows.length || 4} segar`" severity="info" />
+        <Badge value="POLL 5s" severity="success" />
+      </div>
+    </header>
+
+    <Message v-if="error" severity="error" :closable="false">
+      Gagal memuat latest: {{ error }}
+    </Message>
+    <Message v-else severity="info" :closable="false">
+      Status Segar = timestamp &lt; 2 menit (kemungkinan ingest IoT baru).
+      Stale biasanya data seed atau receiver belum kirim.
+      <span v-if="lastPollAt" class="mono poll-hint">
+        · last poll {{ lastPollAt.toLocaleTimeString('id-ID') }}
+      </span>
+    </Message>
+
+    <section class="iot-table-wrap">
+      <table class="iot-table">
+        <thead>
+          <tr>
+            <th>KJA</th>
+            <th>Status</th>
+            <th>Usia data</th>
+            <th>Timestamp</th>
+            <th>pH</th>
+            <th>Suhu</th>
+            <th>Salinitas</th>
+            <th>Turbiditas</th>
+            <th>DO</th>
+            <th>Sumber DO</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="loading">
+            <td colspan="10" class="iot-empty">Memuat…</td>
+          </tr>
+          <tr v-else-if="!rows.length">
+            <td colspan="10" class="iot-empty">Belum ada reading.</td>
+          </tr>
+          <tr v-for="row in rows" :key="row.kja_id">
+            <td class="mono">{{ row.kja_name || `KJA-${row.kja_id}` }}</td>
+            <td>
+              <Badge :value="row.freshness.label" :severity="row.freshness.severity" />
+            </td>
+            <td class="mono">{{ row.ageLabel }}</td>
+            <td class="mono">{{ row.timeLabel }}</td>
+            <td class="mono">{{ row.ph?.toFixed(2) }}</td>
+            <td class="mono">{{ row.temperature?.toFixed(1) }} °C</td>
+            <td class="mono">{{ row.salinity?.toFixed(1) }} ppt</td>
+            <td class="mono">{{ row.turbidity?.toFixed(1) }} NTU</td>
+            <td class="mono">{{ row.do_predicted?.toFixed(2) }}</td>
+            <td class="mono">{{ row.do_source }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="iot-test-panel">
+      <h2 class="iot-section-title">Uji kirim (POST /api/sensor/ingest)</h2>
+      <p class="dashboard-subtitle">
+        Simulasikan payload receiver. Setelah sukses, baris KJA terkait harus jadi
+        <strong>Segar</strong>.
+      </p>
+
+      <div class="iot-form">
+        <label>
+          <span>KJA</span>
+          <Select v-model="form.kja_id" :options="kjaOptions" option-label="label" option-value="value" />
+        </label>
+        <label>
+          <span>pH</span>
+          <InputNumber v-model="form.ph" :min-fraction-digits="1" :max-fraction-digits="2" />
+        </label>
+        <label>
+          <span>Suhu (°C)</span>
+          <InputNumber v-model="form.temperature" :min-fraction-digits="1" :max-fraction-digits="2" />
+        </label>
+        <label>
+          <span>Salinitas (ppt)</span>
+          <InputNumber v-model="form.salinity" :min-fraction-digits="1" :max-fraction-digits="2" />
+        </label>
+        <label>
+          <span>Turbiditas (NTU)</span>
+          <InputNumber v-model="form.turbidity" :min-fraction-digits="1" :max-fraction-digits="2" />
+        </label>
+        <div class="iot-form-actions">
+          <Button label="Kirim uji" icon="pi pi-send" :loading="sending" @click="sendTestIngest" />
+        </div>
+      </div>
+
+      <pre v-if="lastIngest" class="iot-response mono">{{ JSON.stringify(lastIngest, null, 2) }}</pre>
+    </section>
+  </div>
+</template>

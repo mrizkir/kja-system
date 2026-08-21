@@ -104,6 +104,7 @@ Open **http://localhost:5000**.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| POST | `/api/sensor/ingest` | Ingest IoT reading (ph, temperature, salinity, turbidity) |
 | GET | `/api/sensor/latest` | Latest reading per KJA unit |
 | GET | `/api/sensor/history/<kja_id>?hours=24` | Time-series sensor data |
 | GET | `/api/kja/units` | List all KJA units and status |
@@ -111,6 +112,13 @@ Open **http://localhost:5000**.
 | POST | `/api/alert/read/<id>` | Mark alert as read |
 | GET | `/api/inference/do/<kja_id>` | TFT DO prediction (stub) |
 | GET | `/api/health` | Health check |
+
+### Frontend pages
+
+| Path | Description |
+|------|-------------|
+| `/` | Operational dashboard |
+| `/iot` | IoT ingest monitor (freshness + test POST) |
 
 ## Demo Scenarios
 
