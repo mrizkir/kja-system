@@ -114,9 +114,9 @@ async function sendTestIngest() {
     const body = {
       kja_id: form.kja_id,
       ph: form.ph,
-      salinitas: form.salinitas,
-      suhu: form.suhu,
-      kekeruhan: form.kekeruhan,
+      temperature: form.suhu,
+      salinity: form.salinitas,
+      turbidity: form.kekeruhan,
       status: form.status
     }
     const response = await fetch('/api/sensor/ingest', {
@@ -238,7 +238,7 @@ onUnmounted(() => {
       <h2 class="iot-section-title">Uji kirim (format receiver.ino)</h2>
       <p class="dashboard-subtitle">
         Payload sama seperti ESP32:
-        <span class="mono">kja_id, ph, salinitas, suhu, kekeruhan, status</span>
+        <span class="mono">kja_id, ph, temperature, salinity, turbidity, status</span>
         + Bearer token. Setelah sukses, baris KJA harus
         <strong>Segar</strong>.
       </p>

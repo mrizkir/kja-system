@@ -1,24 +1,34 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <time.h>
+#include <math.h>
+
+/* ================== TOGGLE MODE ================== */
+#define USE_BACKEND  1   // 1 = kirim ke Pi, 0 = tidak kirim HTTP
+#define ONLY_PI_4    1   // 1 = rangkaian mati: HANYA WiFi + data random ke Pi (no LoRa/LCD/I2C/SPI)
+                         // 0 = mode normal (LoRa + LCD)
+/* ================================================= */
+
+#if !ONLY_PI_4
 #include <SPI.h>
 #include <LoRa.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <time.h>
+#endif
 
-/* ================== TOGGLE BACKEND ================== */
-#define USE_BACKEND 1   // 1 = kirim ke Pi, 0 = hanya tampil lokal
-/* ==================================================== */
+// Forward declare — Arduino menyisipkan prototype fungsi di sini (sebelum struct penuh)
+struct DataPacket;
 
 /* ------------------- WiFi ------------------- */
-const char* ssid = "ESP32-AP";
-const char* password = "password123";
+const char* ssid = "madong-smart-aquaculture";
+const char* password = "12345678";
 
 /* --------------- Raspberry Pi API --------------- */
 const char* PI_URL = "http://192.168.100.1:8777/api/sensor/ingest";
 const char* BEARER_TOKEN =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImE3ZDJkMWY2LTliNTgtNDYyZC05MGZkLTA1YmViOTRlNWVjMSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc1Njg5OTIxOH0.siu-ITBJxhl5Jhap0ohHRdmd70kFY6oI0CevIgGgLnI";
 
+#if !ONLY_PI_4
 /* ------------------- LCD ------------------- */
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
@@ -30,6 +40,7 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 #define LORA_RST   33
 #define LORA_DIO0  34
 #define LORA_FREQ  951E6   // samakan dgn TX (transmitter.ino)
+#endif
 
 /* ------------------- Node Map (NODE → kja_id) ------------------- */
 struct NodeMap { const char* id; int kjaId; };
@@ -46,6 +57,7 @@ int findNodeIndex(const String &id) {
   return -1;
 }
 
+#if !ONLY_PI_4
 /* -------------- State per Node -------------- */
 struct NodeState {
   bool   has = false;
@@ -57,12 +69,7 @@ struct NodeState {
   unsigned long pktCount = 0;
 };
 NodeState nodeStates[NODE_COUNT];
-
-/* ====== FORWARD DECLARATION ====== */
-struct DataPacket;
-void rbPush(const DataPacket &pkt);
-bool rbPop(DataPacket &pkt);
-bool sendToPi(const DataPacket &pkt);
+#endif
 
 /* ====== Definisi struct & Ring Buffer ====== */
 struct DataPacket {
@@ -79,14 +86,14 @@ static DataPacket rbBuf[BUFFER_SIZE];
 static int rbHead = 0, rbTail = 0;
 
 inline bool rbEmpty() { return rbHead == rbTail; }
-inline bool rbFull()  { return ((rbHead + 1) % BUFFER_SIZE) == rbTail; }
 
 void rbPush(const DataPacket &pkt) {
   int next = (rbHead + 1) % BUFFER_SIZE;
-  if (next == rbTail) rbTail = (rbTail + 1) % BUFFER_SIZE; // overwrite tertua
+  if (next == rbTail) rbTail = (rbTail + 1) % BUFFER_SIZE;
   rbBuf[rbHead] = pkt;
   rbHead = next;
 }
+
 bool rbPop(DataPacket &pkt) {
   if (rbEmpty()) return false;
   pkt = rbBuf[rbTail];
@@ -98,7 +105,6 @@ bool rbPop(DataPacket &pkt) {
 bool timeValid() {
   struct tm t;
   if (!getLocalTime(&t, 0)) return false;
-  // anggap valid kalau tahun > 2016 (ESP default epoch 1970/2000)
   return (t.tm_year > (2016 - 1900));
 }
 
@@ -106,7 +112,6 @@ String getLocalTimestamp() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) return "Invalid Time";
   char b[25];
-  // Format: YYYY-MM-DD HH:MM:SS  (diterima API ingest)
   strftime(b, sizeof(b), "%Y-%m-%d %H:%M:%S", &timeinfo);
   return String(b);
 }
@@ -125,13 +130,13 @@ bool sendToPi(const DataPacket &pkt) {
     return false;
   }
   String body = "{";
-  body += "\"kja_id\":"    + String(pkt.kjaId) + ",";
-  body += "\"ph\":"        + String(isnan(pkt.pH)   ? 0.0 : pkt.pH,   2) + ",";
-  body += "\"salinitas\":" + String(isnan(pkt.sal)  ? 0.0 : pkt.sal,  2) + ",";
-  body += "\"suhu\":"      + String(isnan(pkt.suhu) ? 0.0 : pkt.suhu, 2) + ",";
-  body += "\"kekeruhan\":" + String(isnan(pkt.ntu)  ? 0.0 : pkt.ntu,  2) + ",";
-  body += "\"status\":\""  + pkt.status + "\",";
-  body += "\"timestamp\":\"" + pkt.timestamp + "\"";
+  body += "\"kja_id\":"       + String(pkt.kjaId) + ",";
+  body += "\"ph\":"           + String(isnan(pkt.pH)   ? 0.0 : pkt.pH,   2) + ",";
+  body += "\"temperature\":"  + String(isnan(pkt.suhu) ? 0.0 : pkt.suhu, 2) + ",";
+  body += "\"salinity\":"     + String(isnan(pkt.sal)  ? 0.0 : pkt.sal,  2) + ",";
+  body += "\"turbidity\":"    + String(isnan(pkt.ntu)  ? 0.0 : pkt.ntu,  2) + ",";
+  body += "\"status\":\""     + pkt.status + "\",";
+  body += "\"timestamp\":\""  + pkt.timestamp + "\"";
   body += "}";
   WiFiClient client; HTTPClient http;
   http.begin(client, PI_URL);
@@ -148,6 +153,7 @@ bool sendToPi(const DataPacket &pkt) {
 #endif
 }
 
+#if !ONLY_PI_4
 /* ------------------- LCD helpers ------------------- */
 void showOnLCD(const String& id, float pH, float sal, float suhu, float ntu,
                int rssi = 0, float snr = 0, unsigned long pktCount = 0, int age = -1) {
@@ -161,23 +167,45 @@ void showOnLCD(const String& id, float pH, float sal, float suhu, float ntu,
   if (age >= 0) { lcd.setCursor(11, 1); lcd.print("RSI:"); lcd.print(rssi);
                   lcd.setCursor(11, 2); lcd.print("SNR:"); lcd.print(snr, 1); }
 }
+#endif
 
 /* ------------------- Setup ------------------- */
 void setup() {
   Serial.begin(115200);
+  delay(500);
+
+#if ONLY_PI_4
+  Serial.println();
+  Serial.println("############################################");
+  Serial.println("#  ONLY_PI_4=1  (WiFi + dummy HTTP only)  #");
+  Serial.println("#  LoRa/LCD/I2C/SPI DISABLED               #");
+  Serial.println("############################################");
+#else
+  Serial.println();
+  Serial.println("=== RECEIVER normal (LoRa + LCD) ===");
   lcd.init(); lcd.backlight();
   lcd.setCursor(0, 0); lcd.print("Init WiFi...");
+#endif
 
   WiFi.begin(ssid, password);
   unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && (millis() - t0) < 15000) { delay(400); Serial.print("."); }
-  if (WiFi.status() == WL_CONNECTED) { Serial.println("\nWiFi Terhubung"); lcd.setCursor(0,1); lcd.print("WiFi Terhubung   "); }
-  else { Serial.println("\nWiFi GAGAL (offline)"); lcd.setCursor(0,1); lcd.print("WiFi Gagal       "); }
+  while (WiFi.status() != WL_CONNECTED && (millis() - t0) < 15000) {
+    delay(400);
+    Serial.print(".");
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi Terhubung");
+#if !ONLY_PI_4
+    lcd.setCursor(0, 1); lcd.print("WiFi Terhubung   ");
+#endif
+  } else {
+    Serial.println("\nWiFi GAGAL (offline)");
+#if !ONLY_PI_4
+    lcd.setCursor(0, 1); lcd.print("WiFi Gagal       ");
+#endif
+  }
 
-  // Zona waktu Asia/Jakarta (UTC+7)
   configTime(25200, 0, "pool.ntp.org", "time.nist.gov");
-
-  // Tunggu NTP siap (timeout 10 detik)
   const unsigned long MAX_NTP_WAIT = 10000;
   unsigned long ts = millis();
   while (!timeValid() && (millis() - ts) < MAX_NTP_WAIT) {
@@ -190,30 +218,65 @@ void setup() {
     Serial.println("NTP belum siap, akan fallback 'now' saat kirim.");
   }
 
+#if ONLY_PI_4
+  Serial.println("[ONLY_PI_4] Siap — kirim dummy ke Pi tiap 3s");
+#else
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI);
   LoRa.setPins(LORA_CS, LORA_RST, LORA_DIO0);
   LoRa.setSPIFrequency(1E6);
-  if (!LoRa.begin(LORA_FREQ)) { lcd.setCursor(0,2); lcd.print("LoRa GAGAL!"); while (1) { Serial.println("LoRa init failed"); delay(1000); } }
+  if (!LoRa.begin(LORA_FREQ)) {
+    lcd.setCursor(0, 2); lcd.print("LoRa GAGAL!");
+    while (1) { Serial.println("LoRa init failed"); delay(1000); }
+  }
   LoRa.setSpreadingFactor(7);
   LoRa.setSignalBandwidth(125E3);
   LoRa.setCodingRate4(5);
   LoRa.enableCrc();
-
   lcd.setCursor(0, 2); lcd.print("LoRa RX Aktif    ");
   delay(800); lcd.clear();
-
   Serial.println("==== RX siap ====");
   Serial.println("Format: NODEX,pH,sal,suhu,NTU");
+#endif
+
   for (int i = 0; i < NODE_COUNT; i++)
     Serial.printf(" - %s -> kja_id=%d\n", NODE_MAP[i].id, NODE_MAP[i].kjaId);
 }
 
 /* ------------------- Loop ------------------- */
 void loop() {
-  // WiFi auto-reconnect ringan
   static unsigned long lastWiFiCheck = 0;
-  if (millis() - lastWiFiCheck > 5000) { if (WiFi.status() != WL_CONNECTED) WiFi.reconnect(); lastWiFiCheck = millis(); }
+  if (millis() - lastWiFiCheck > 5000) {
+    if (WiFi.status() != WL_CONNECTED) WiFi.reconnect();
+    lastWiFiCheck = millis();
+  }
 
+#if ONLY_PI_4
+  // --- Hanya uji ke Pi: data random NODE1..NODE4 ---
+  static unsigned long lastDummy = 0;
+  static int dummyIdx = 0;
+  if (millis() - lastDummy > 3000) {
+    int idx = dummyIdx % NODE_COUNT;
+    dummyIdx++;
+
+    float vPH   = 7.50f + (random(0, 100) / 100.0f);
+    float vSal  = 28.0f + (random(0, 60) / 10.0f);
+    float vSuhu = 26.0f + (random(0, 40) / 10.0f);
+    float vNTU  = 5.0f  + (random(0, 100) / 10.0f);
+
+    DataPacket pkt;
+    pkt.nodeId = NODE_MAP[idx].id;
+    pkt.kjaId = NODE_MAP[idx].kjaId;
+    pkt.pH = vPH; pkt.sal = vSal; pkt.suhu = vSuhu; pkt.ntu = vNTU;
+    pkt.status = "ONLY_PI_4";
+    pkt.timestamp = getNowTimestamp();
+    pkt.rssi = 0; pkt.snr = 0;
+
+    Serial.printf("[ONLY_PI_4] %s kja_id=%d ph=%.2f sal=%.1f suhu=%.1f ntu=%.1f\n",
+                  pkt.nodeId.c_str(), pkt.kjaId, vPH, vSal, vSuhu, vNTU);
+    rbPush(pkt);
+    lastDummy = millis();
+  }
+#else
   // Terima paket LoRa
   int packetSize = LoRa.parsePacket();
   if (packetSize) {
@@ -224,7 +287,7 @@ void loop() {
     int p0 = data.indexOf(',');
     if (p0 > 0) {
       String nodeId = data.substring(0, p0);
-      nodeId.trim(); // buang spasi/newline
+      nodeId.trim();
 
       int idx = findNodeIndex(nodeId);
       if (idx < 0) {
@@ -260,7 +323,6 @@ void loop() {
 
           Serial.printf("[QUEUE] %s -> kja_id=%d, ts=%s\n",
                         pkt.nodeId.c_str(), pkt.kjaId, pkt.timestamp.c_str());
-
           rbPush(pkt);
         } else {
           Serial.println("[RX] Gagal parse (delimiter kurang): " + data);
@@ -275,7 +337,10 @@ void loop() {
   static unsigned long lastRotate = 0; static int showIdx = -1;
   if (millis() - lastRotate > 1500) {
     bool any = false;
-    for (int k = 0; k < NODE_COUNT; k++) { showIdx = (showIdx + 1) % NODE_COUNT; if (nodeStates[showIdx].has) { any = true; break; } }
+    for (int k = 0; k < NODE_COUNT; k++) {
+      showIdx = (showIdx + 1) % NODE_COUNT;
+      if (nodeStates[showIdx].has) { any = true; break; }
+    }
     if (any) {
       const NodeState &S = nodeStates[showIdx];
       int age = (millis() - S.lastMs) / 1000;
@@ -283,8 +348,9 @@ void loop() {
     }
     lastRotate = millis();
   }
+#endif
 
-  // Kirim data dari buffer ke Pi (tiap 1 s)
+  // Kirim antrian ke Pi (tiap 1 s)
   static unsigned long lastSend = 0;
   if (millis() - lastSend > 1000) {
     DataPacket pkt;
