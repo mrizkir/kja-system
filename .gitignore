@@ -21,6 +21,5 @@ frontend/dist/
 *.swp
 .DS_Store
 
-# Flask static build (generated)
-static/*
-!static/.gitkeep
+# Flask static build — tracked so Pi can git clone without Node/npm
+# (rebuild with: cd frontend && npm run build)

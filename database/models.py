@@ -7,9 +7,11 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     create_engine,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
@@ -51,6 +53,7 @@ class KjaUnit(Base):
 
 class SensorReading(Base):
     __tablename__ = "sensor_readings"
+    __table_args__ = (Index("ix_kja_timestamp", "kja_id", "timestamp"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     kja_id: Mapped[int] = mapped_column(ForeignKey("kja_units.id"), nullable=False, index=True)
@@ -88,6 +91,8 @@ def get_engine():
     global _engine
     if _engine is None:
         _engine = create_engine(Config.SQLALCHEMY_DATABASE_URI)
+        with _engine.connect() as conn:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
     return _engine
 
 
