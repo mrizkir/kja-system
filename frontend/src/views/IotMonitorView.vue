@@ -24,17 +24,22 @@ const lastIngest = ref(null)
 const form = reactive({
   kja_id: 1,
   ph: 8.0,
-  temperature: 27.0,
-  salinity: 30.0,
-  turbidity: 10.0
+  suhu: 27.0,
+  salinitas: 30.0,
+  kekeruhan: 10.0,
+  status: 'Data Masuk'
 })
 
 const kjaOptions = [
-  { label: 'KJA-01', value: 1 },
-  { label: 'KJA-02', value: 2 },
-  { label: 'KJA-03', value: 3 },
-  { label: 'KJA-04', value: 4 }
+  { label: 'NODE1 → KJA-01', value: 1 },
+  { label: 'NODE2 → KJA-02', value: 2 },
+  { label: 'NODE3 → KJA-03', value: 3 },
+  { label: 'NODE4 → KJA-04', value: 4 }
 ]
+
+// Same default as receiver.ino BEARER_TOKEN / Config.INGEST_BEARER_TOKEN
+const INGEST_BEARER =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImE3ZDJkMWY2LTliNTgtNDYyZC05MGZkLTA1YmViOTRlNWVjMSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc1Njg5OTIxOH0.siu-ITBJxhl5Jhap0ohHRdmd70kFY6oI0CevIgGgLnI'
 
 let pollTimer = null
 
@@ -106,16 +111,21 @@ async function poll() {
 async function sendTestIngest() {
   sending.value = true
   try {
+    const body = {
+      kja_id: form.kja_id,
+      ph: form.ph,
+      salinitas: form.salinitas,
+      suhu: form.suhu,
+      kekeruhan: form.kekeruhan,
+      status: form.status
+    }
     const response = await fetch('/api/sensor/ingest', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kja_id: form.kja_id,
-        ph: form.ph,
-        temperature: form.temperature,
-        salinity: form.salinity,
-        turbidity: form.turbidity
-      })
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${INGEST_BEARER}`
+      },
+      body: JSON.stringify(body)
     })
     const data = await response.json()
     if (!response.ok) {
@@ -125,7 +135,7 @@ async function sendTestIngest() {
     toast.add({
       severity: 'success',
       summary: 'Ingest OK',
-      detail: `KJA-${String(form.kja_id).padStart(2, '0')} tersimpan`,
+      detail: `${data.kja_name || 'KJA'} tersimpan (format receiver.ino)`,
       life: 4000
     })
     await poll()
@@ -225,9 +235,11 @@ onUnmounted(() => {
     </section>
 
     <section class="iot-test-panel">
-      <h2 class="iot-section-title">Uji kirim (POST /api/sensor/ingest)</h2>
+      <h2 class="iot-section-title">Uji kirim (format receiver.ino)</h2>
       <p class="dashboard-subtitle">
-        Simulasikan payload receiver. Setelah sukses, baris KJA terkait harus jadi
+        Payload sama seperti ESP32:
+        <span class="mono">kja_id, ph, salinitas, suhu, kekeruhan, status</span>
+        + Bearer token. Setelah sukses, baris KJA harus
         <strong>Segar</strong>.
       </p>
 
@@ -242,15 +254,15 @@ onUnmounted(() => {
         </label>
         <label>
           <span>Suhu (°C)</span>
-          <InputNumber v-model="form.temperature" :min-fraction-digits="1" :max-fraction-digits="2" />
+          <InputNumber v-model="form.suhu" :min-fraction-digits="1" :max-fraction-digits="2" />
         </label>
         <label>
           <span>Salinitas (ppt)</span>
-          <InputNumber v-model="form.salinity" :min-fraction-digits="1" :max-fraction-digits="2" />
+          <InputNumber v-model="form.salinitas" :min-fraction-digits="1" :max-fraction-digits="2" />
         </label>
         <label>
-          <span>Turbiditas (NTU)</span>
-          <InputNumber v-model="form.turbidity" :min-fraction-digits="1" :max-fraction-digits="2" />
+          <span>Kekeruhan (NTU)</span>
+          <InputNumber v-model="form.kekeruhan" :min-fraction-digits="1" :max-fraction-digits="2" />
         </label>
         <div class="iot-form-actions">
           <Button label="Kirim uji" icon="pi pi-send" :loading="sending" @click="sendTestIngest" />

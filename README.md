@@ -104,7 +104,7 @@ Open **http://localhost:5000**.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/sensor/ingest` | Ingest IoT reading (ph, temperature, salinity, turbidity) |
+| POST | `/api/sensor/ingest` | Ingest IoT reading from `receiver.ino` (`kja_id`, `ph`, `salinitas`, `suhu`, `kekeruhan`) |
 | GET | `/api/sensor/latest` | Latest reading per KJA unit |
 | GET | `/api/sensor/history/<kja_id>?hours=24` | Time-series sensor data |
 | GET | `/api/kja/units` | List all KJA units and status |

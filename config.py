@@ -12,6 +12,11 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     STATIC_FOLDER = BASE_DIR / "static"
     DEBUG = False
+    # Must match Authorization Bearer in receiver.ino (override via env)
+    INGEST_BEARER_TOKEN = os.environ.get(
+        "INGEST_BEARER_TOKEN",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImE3ZDJkMWY2LTliNTgtNDYyZC05MGZkLTA1YmViOTRlNWVjMSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc1Njg5OTIxOH0.siu-ITBJxhl5Jhap0ohHRdmd70kFY6oI0CevIgGgLnI",
+    )
 
 
 class DevelopmentConfig(Config):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import func
 
 from database.models import (
@@ -17,8 +17,6 @@ from database.seed import _alert_message, evaluate_parameter
 from inference.tft_model import predict_do
 
 sensors_bp = Blueprint("sensors", __name__, url_prefix="/api")
-
-_REQUIRED_INGEST_FIELDS = ("kja_id", "ph", "temperature", "salinity", "turbidity")
 
 
 def _reading_to_dict(reading: SensorReading, kja_name: str | None = None) -> dict:
@@ -61,8 +59,15 @@ def _parse_float(payload: dict, key: str) -> float:
         raise ValueError(f"Invalid numeric value for '{key}'") from exc
 
 
+def _first_float(payload: dict, *keys: str) -> float:
+    for key in keys:
+        if key in payload and payload[key] is not None:
+            return _parse_float(payload, key)
+    raise ValueError(f"Missing numeric field (tried: {', '.join(keys)})")
+
+
 def _parse_timestamp(value: object) -> datetime:
-    if value is None:
+    if value is None or value == "now":
         return datetime.utcnow()
     if isinstance(value, (int, float)):
         return datetime.utcfromtimestamp(value)
@@ -70,30 +75,57 @@ def _parse_timestamp(value: object) -> datetime:
         text = value.strip()
         if text.endswith("Z"):
             text = text[:-1] + "+00:00"
-        try:
-            return datetime.fromisoformat(text).replace(tzinfo=None)
-        except ValueError as exc:
-            raise ValueError("Invalid timestamp; use ISO-8601") from exc
+        # receiver may send "YYYY-MM-DD HH:MM:SS"
+        for fmt in (None, "%Y-%m-%d %H:%M:%S", "%d-%m-%Y %H:%M:%S"):
+            try:
+                if fmt is None:
+                    return datetime.fromisoformat(text).replace(tzinfo=None)
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        raise ValueError("Invalid timestamp; use ISO-8601 or YYYY-MM-DD HH:MM:SS")
     raise ValueError("Invalid timestamp; use ISO-8601 or unix epoch")
+
+
+def _check_ingest_auth() -> tuple[dict, int] | None:
+    """Validate Bearer token from receiver.ino when Authorization header is present."""
+    expected = current_app.config.get("INGEST_BEARER_TOKEN")
+    header = request.headers.get("Authorization", "")
+    if not header:
+        # Allow dashboard / curl tests without token
+        return None
+    if not header.startswith("Bearer "):
+        return {"error": "Authorization must be Bearer token"}, 401
+    token = header[7:].strip()
+    if expected and token != expected:
+        return {"error": "Invalid bearer token"}, 401
+    return None
+
+
+def _resolve_kja_id(payload: dict) -> int:
+    if "kja_id" not in payload:
+        raise ValueError("Missing 'kja_id'")
+    return int(payload["kja_id"])
 
 
 @sensors_bp.route("/sensor/ingest", methods=["POST"])
 def ingest_reading():
-    """Accept IoT sensor payload (4 water-quality params + optional fields)."""
+    """Accept IoT payload from receiver.ino (kja_id + ph/suhu/salinitas/kekeruhan)."""
+    auth_error = _check_ingest_auth()
+    if auth_error:
+        body, code = auth_error
+        return jsonify(body), code
+
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({"error": "JSON body required"}), 400
 
-    missing = [field for field in _REQUIRED_INGEST_FIELDS if field not in payload]
-    if missing:
-        return jsonify({"error": "Missing required fields", "fields": missing}), 400
-
     try:
-        kja_id = int(payload["kja_id"])
-        ph = _parse_float(payload, "ph")
-        temperature = _parse_float(payload, "temperature")
-        salinity = _parse_float(payload, "salinity")
-        turbidity = _parse_float(payload, "turbidity")
+        kja_id = _resolve_kja_id(payload)
+        ph = _first_float(payload, "ph")
+        temperature = _first_float(payload, "suhu", "temperature")
+        salinity = _first_float(payload, "salinitas", "salinity")
+        turbidity = _first_float(payload, "kekeruhan", "turbidity")
         timestamp = _parse_timestamp(payload.get("timestamp"))
 
         light_intensity = (
@@ -106,6 +138,7 @@ def ingest_reading():
             if "do_predicted" in payload
             else None
         )
+        device_status = payload.get("status")
     except (TypeError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -190,6 +223,9 @@ def ingest_reading():
         return jsonify(
             {
                 "ok": True,
+                "kja_id": kja_id,
+                "kja_name": unit.name,
+                "device_status": device_status,
                 "reading": _reading_to_dict(reading, unit.name),
                 "alerts": created_alerts,
             }
