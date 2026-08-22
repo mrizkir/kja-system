@@ -24,7 +24,7 @@ const char* ssid = "madong-smart-aquaculture";
 const char* password = "12345678";
 
 /* --------------- Raspberry Pi API --------------- */
-const char* PI_URL = "http://192.168.100.1:8777/api/sensor/ingest";
+const char* PI_URL = "http://192.168.50.1:8777/api/sensor/ingest";
 const char* BEARER_TOKEN =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImE3ZDJkMWY2LTliNTgtNDYyZC05MGZkLTA1YmViOTRlNWVjMSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc1Njg5OTIxOH0.siu-ITBJxhl5Jhap0ohHRdmd70kFY6oI0CevIgGgLnI";
 

@@ -11,6 +11,8 @@ class Config:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     STATIC_FOLDER = BASE_DIR / "static"
+    # Override on Pi if needed: Environment=KJA_LOG_DIR=/home/rizki/kja-logs
+    LOG_DIR = Path(os.environ.get("KJA_LOG_DIR", BASE_DIR / "logs"))
     DEBUG = False
     # Must match Authorization Bearer in receiver.ino (override via env)
     INGEST_BEARER_TOKEN = os.environ.get(

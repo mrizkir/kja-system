@@ -1,15 +1,63 @@
 from __future__ import annotations
 
+import logging
 import os
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from api.alerts import alerts_bp
 from api.sensors import sensors_bp
 from config import config_by_name
 from database.models import Base, get_engine
+
+_PAYLOAD_BODY_LIMIT = 2000
+
+
+def _setup_payload_log(app: Flask) -> None:
+    """Log API method, query string, and body to logs/payload.log (no secrets)."""
+    log_dir = Path(app.config["LOG_DIR"])
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    logger = logging.getLogger("kja.payload")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    if not logger.handlers:
+        handler = TimedRotatingFileHandler(
+            log_dir / "payload.log",
+            when="midnight",
+            backupCount=14,
+            encoding="utf-8",
+        )
+        handler.suffix = "%Y-%m-%d"
+        handler.namer = lambda name: str(
+            Path(name).parent / f"payload-{Path(name).name.rsplit('.', 1)[-1]}.log"
+        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+        logger.addHandler(handler)
+
+    @app.before_request
+    def log_request_payload():
+        if not request.path.startswith("/api/"):
+            return
+        if request.path == "/api/health":
+            return
+
+        qs = request.query_string.decode("utf-8", errors="replace")
+        body = "-"
+        if request.method in ("POST", "PUT", "PATCH"):
+            raw = request.get_data(cache=True, as_text=True) or ""
+            body = raw[:_PAYLOAD_BODY_LIMIT] if raw else "-"
+
+        logger.info(
+            "%s %s qs=%s body=%s",
+            request.method,
+            request.path,
+            qs or "-",
+            body,
+        )
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -58,6 +106,7 @@ def create_app(config_name: str | None = None) -> Flask:
             }
         )
 
+    _setup_payload_log(app)
     return app
 
 
