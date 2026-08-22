@@ -261,6 +261,20 @@ void loop() {
     lastWiFiCheck = millis();
   }
 
+  // --- DIAGNOSTIK: heartbeat, aktif di kedua mode ---
+  // Kalau baris [HB] berhenti muncul, ESP32 hang/freeze (bukan cuma "tidak ada paket LoRa").
+  // Kalau uptime tiba-tiba reset ke 0, ESP32 reboot diam-diam (cek juga apakah banner
+  // setup tercetak ulang).
+  // freeHeap yang terus turun dari waktu ke waktu adalah tanda heap fragmentation
+  // (kemungkinan dari pemakaian String yang berat), berguna dipantau untuk deployment lama.
+  static unsigned long lastHeartbeat = 0;
+  if (millis() - lastHeartbeat > 5000) {
+    Serial.printf("[HB] alive uptime=%lus freeHeap=%u rbHead=%d rbTail=%d wifi=%d\n",
+                  millis() / 1000, ESP.getFreeHeap(), rbHead, rbTail,
+                  (int)(WiFi.status() == WL_CONNECTED));
+    lastHeartbeat = millis();
+  }
+
 #if ONLY_PI_4
   // --- Hanya uji ke Pi: data random NODE1..NODE4 ---
   static unsigned long lastDummy = 0;

@@ -147,6 +147,7 @@ float readTurbidity(){
 #define LORA_DIO0  34
 
 unsigned long lastSend = 0;
+int gagalBeruntun = 0;   // kegagalan beginPacket() berturut-turut
 
 void setup(){
   Serial.begin(115200);
@@ -180,7 +181,9 @@ void setup(){
   for (int i=0;i<bufferSizeMedian;i++) bufferMedian[i] = 0;
 
   // LCD
-  lcd.init(); lcd.backlight();
+  lcd.init();
+  Wire.setTimeOut(1000);  // cegah hang I2C tanpa batas jika bus bermasalah
+  lcd.backlight();
   lcd.setCursor(0,0); lcd.print("TX "); lcd.print(NODE_ID); lcd.print(" init..");
   sensors.begin();
 
@@ -303,11 +306,41 @@ void loop(){
   if (millis() - lastSend > BASE_INTERVAL_MS + (uint32_t)random(0, 500)) {
     String data = String(NODE_ID) + "," + String(valPH, 2) + "," + String(valSal, 2) + "," +
                   String(valSuhu, 1) + "," + String(valNTU, 1);
-    LoRa.beginPacket();
-    LoRa.print(data);
-    LoRa.endPacket(true); // async
-    Serial.println(String("[LoRa] Kirim: ") + data);
+
+    if (LoRa.beginPacket()) {
+      LoRa.print(data);
+      LoRa.endPacket(true); // async
+      Serial.println(String("[LoRa] Kirim: ") + data);
+      gagalBeruntun = 0;
+    } else {
+      gagalBeruntun++;
+      Serial.printf("[LoRa] Gagal: radio busy, lewati siklus (gagalBeruntun=%d)\n", gagalBeruntun);
+
+      if (gagalBeruntun >= 3) {
+        Serial.println("[LoRa] Radio stuck TX, reinit...");
+        LoRa.end();
+        if (!LoRa.begin(LORA_FREQ)) {
+          Serial.println("[LoRa] Reinit GAGAL");
+        } else {
+          LoRa.setSpreadingFactor(7);
+          LoRa.setSignalBandwidth(125E3);
+          LoRa.setCodingRate4(5);
+          LoRa.setTxPower(17);
+          LoRa.enableCrc();
+          Serial.println("[LoRa] Reinit radio berhasil");
+        }
+        gagalBeruntun = 0;
+      }
+    }
+
     lastSend = millis();
+  }
+
+  static unsigned long lastHeartbeat = 0;
+  if (millis() - lastHeartbeat > 5000) {
+    Serial.printf("[HB] alive uptime=%lus freeHeap=%u loraFailStreak=%d\n",
+                  millis() / 1000, ESP.getFreeHeap(), gagalBeruntun);
+    lastHeartbeat = millis();
   }
 
   delay(1000);
