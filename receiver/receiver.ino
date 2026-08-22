@@ -60,9 +60,9 @@ int findNodeIndex(const String &id) {
 #if !ONLY_PI_4
 /* -------------- State per Node -------------- */
 struct NodeState {
-  bool   has = false;
-  float  pH = NAN, sal = NAN, suhu = NAN, ntu = NAN;
-  String status = "";
+  bool   has = true;   // tampil dari boot; nilai default 0 sampai LoRa masuk
+  float  pH = 0, sal = 0, suhu = 0, ntu = 0;
+  String status = "Menunggu";
   unsigned long lastMs = 0;
   int    rssi = 0;
   float  snr  = 0;
@@ -159,11 +159,11 @@ void showOnLCD(const String& id, float pH, float sal, float suhu, float ntu,
                int rssi = 0, float snr = 0, unsigned long pktCount = 0, int age = -1) {
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("ID:"); lcd.print(id); lcd.print("  #"); lcd.print(pktCount);
-  lcd.setCursor(0, 1); lcd.print("PH: ");  if (isnan(pH)) lcd.print("--"); else lcd.print(pH, 2);
-  lcd.setCursor(0, 2); lcd.print("SAL: "); if (isnan(sal)) lcd.print("--"); else lcd.print(sal, 2);
+  lcd.setCursor(0, 1); lcd.print("PH: ");  lcd.print(isnan(pH) ? 0.0 : pH, 2);
+  lcd.setCursor(0, 2); lcd.print("SAL: "); lcd.print(isnan(sal) ? 0.0 : sal, 2);
   lcd.setCursor(0, 3); lcd.print("SH: ");
-  if (isnan(suhu)) lcd.print("--"); else { lcd.print(suhu, 1); lcd.print((char)223); lcd.print("C "); }
-  lcd.setCursor(11, 3); lcd.print("TUR: "); if (isnan(ntu)) lcd.print("--"); else lcd.print(ntu, 1);
+  lcd.print(isnan(suhu) ? 0.0 : suhu, 1); lcd.print((char)223); lcd.print("C ");
+  lcd.setCursor(11, 3); lcd.print("TUR: "); lcd.print(isnan(ntu) ? 0.0 : ntu, 1);
   if (age >= 0) { lcd.setCursor(11, 1); lcd.print("RSI:"); lcd.print(rssi);
                   lcd.setCursor(11, 2); lcd.print("SNR:"); lcd.print(snr, 1); }
 }
@@ -233,7 +233,18 @@ void setup() {
   LoRa.setCodingRate4(5);
   LoRa.enableCrc();
   lcd.setCursor(0, 2); lcd.print("LoRa RX Aktif    ");
-  delay(800); lcd.clear();
+  delay(800);
+  unsigned long nowMs = millis();
+  for (int i = 0; i < NODE_COUNT; i++) {
+    nodeStates[i].has = true;
+    nodeStates[i].pH = 0;
+    nodeStates[i].sal = 0;
+    nodeStates[i].suhu = 0;
+    nodeStates[i].ntu = 0;
+    nodeStates[i].status = "Menunggu";
+    nodeStates[i].lastMs = nowMs;
+  }
+  showOnLCD(NODE_MAP[0].id, 0, 0, 0, 0, 0, 0, 0, 0);
   Serial.println("==== RX siap ====");
   Serial.println("Format: NODEX,pH,sal,suhu,NTU");
 #endif
@@ -333,19 +344,13 @@ void loop() {
     }
   }
 
-  // Rotasi tampilan LCD antar node (tiap 1.5 s)
-  static unsigned long lastRotate = 0; static int showIdx = -1;
+  // Rotasi tampilan LCD antar node (tiap 1.5 s) — semua node, default 0
+  static unsigned long lastRotate = 0; static int showIdx = 0;
   if (millis() - lastRotate > 1500) {
-    bool any = false;
-    for (int k = 0; k < NODE_COUNT; k++) {
-      showIdx = (showIdx + 1) % NODE_COUNT;
-      if (nodeStates[showIdx].has) { any = true; break; }
-    }
-    if (any) {
-      const NodeState &S = nodeStates[showIdx];
-      int age = (millis() - S.lastMs) / 1000;
-      showOnLCD(NODE_MAP[showIdx].id, S.pH, S.sal, S.suhu, S.ntu, S.rssi, S.snr, S.pktCount, age);
-    }
+    showIdx = (showIdx + 1) % NODE_COUNT;
+    const NodeState &S = nodeStates[showIdx];
+    int age = (millis() - S.lastMs) / 1000;
+    showOnLCD(NODE_MAP[showIdx].id, S.pH, S.sal, S.suhu, S.ntu, S.rssi, S.snr, S.pktCount, age);
     lastRotate = millis();
   }
 #endif
