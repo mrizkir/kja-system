@@ -89,7 +89,7 @@ onUnmounted(() => {
       <div>
         <h1 class="dashboard-title">KJA Digital Twin</h1>
         <p class="dashboard-subtitle">
-          Sistem Pemantauan Budidaya Kerapu — Tanjungpinang, Kepulauan Riau
+          Kp. Madong Smart Aquaculture — Tanjungpinang, Kepulauan Riau
         </p>
       </div>
       <div class="header-meta">
