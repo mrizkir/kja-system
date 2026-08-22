@@ -5,7 +5,7 @@
 
 /* ================== TOGGLE MODE ================== */
 #define USE_BACKEND  1   // 1 = kirim ke Pi, 0 = tidak kirim HTTP
-#define ONLY_PI_4    1   // 1 = rangkaian mati: HANYA WiFi + data random ke Pi (no LoRa/LCD/I2C/SPI)
+#define ONLY_PI_4    0   // 1 = rangkaian mati: HANYA WiFi + data random ke Pi (no LoRa/LCD/I2C/SPI)
                          // 0 = mode normal (LoRa + LCD)
 /* ================================================= */
 
