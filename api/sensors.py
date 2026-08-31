@@ -108,6 +108,32 @@ def _resolve_kja_id(payload: dict) -> int:
     return int(payload["kja_id"])
 
 
+def _encoder_hours() -> int:
+    return int(current_app.config.get("TFT_ENCODER_HOURS", 336))
+
+
+def _history_for_inference(session, kja_id: int) -> list[dict]:
+    since = datetime.utcnow() - timedelta(hours=_encoder_hours())
+    history = (
+        session.query(SensorReading)
+        .filter(SensorReading.kja_id == kja_id, SensorReading.timestamp >= since)
+        .order_by(SensorReading.timestamp.asc())
+        .all()
+    )
+    return [
+        {
+            "timestamp": r.timestamp.isoformat(),
+            "ph": r.ph,
+            "temperature": r.temperature,
+            "salinity": r.salinity,
+            "turbidity": r.turbidity,
+            "light_intensity": r.light_intensity,
+            "do_predicted": r.do_predicted,
+        }
+        for r in history
+    ]
+
+
 @sensors_bp.route("/sensor/ingest", methods=["POST"])
 def ingest_reading():
     """Accept IoT payload from receiver.ino (kja_id + ph/suhu/salinitas/kekeruhan)."""
@@ -149,26 +175,21 @@ def ingest_reading():
             return jsonify({"error": "KJA unit not found"}), 404
 
         if do_predicted_in is None:
-            since = datetime.utcnow() - timedelta(hours=24)
-            history = (
-                session.query(SensorReading)
-                .filter(SensorReading.kja_id == kja_id, SensorReading.timestamp >= since)
-                .order_by(SensorReading.timestamp.asc())
-                .all()
+            encoder_history = _history_for_inference(session, kja_id)
+            prediction = predict_do(
+                kja_id,
+                encoder_history,
+                static={"species": unit.species.value},
+                # TODO: wire BMKG forecast API here once available
             )
-            last_24h = [
-                {
-                    "timestamp": r.timestamp.isoformat(),
-                    "ph": r.ph,
-                    "temperature": r.temperature,
-                    "salinity": r.salinity,
-                    "turbidity": r.turbidity,
-                    "light_intensity": r.light_intensity,
-                    "do_predicted": r.do_predicted,
-                }
-                for r in history
-            ]
-            prediction = predict_do(kja_id, last_24h)
+            if prediction.get("error") or prediction.get("do_now") is None:
+                return jsonify(
+                    {
+                        "error": prediction.get(
+                            "error", "TFT prediction unavailable"
+                        )
+                    }
+                ), 503
             do_predicted = float(prediction["do_now"])
             do_source = DoSource.tft
         else:
@@ -333,28 +354,13 @@ def inference_do(kja_id: int):
         if not unit:
             return jsonify({"error": "KJA unit not found"}), 404
 
-        since = datetime.utcnow() - timedelta(hours=24)
-        readings = (
-            session.query(SensorReading)
-            .filter(SensorReading.kja_id == kja_id, SensorReading.timestamp >= since)
-            .order_by(SensorReading.timestamp.asc())
-            .all()
+        encoder_history = _history_for_inference(session, kja_id)
+        prediction = predict_do(
+            kja_id,
+            encoder_history,
+            static={"species": unit.species.value},
+            # TODO: wire BMKG forecast API here once available
         )
-
-        last_24h = [
-            {
-                "timestamp": r.timestamp.isoformat(),
-                "ph": r.ph,
-                "temperature": r.temperature,
-                "salinity": r.salinity,
-                "turbidity": r.turbidity,
-                "light_intensity": r.light_intensity,
-                "do_predicted": r.do_predicted,
-            }
-            for r in readings
-        ]
-
-        prediction = predict_do(kja_id, last_24h)
         return jsonify(
             {
                 "kja_id": kja_id,

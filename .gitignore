@@ -26,5 +26,11 @@ frontend/dist/
 # Runtime logs (payload / gunicorn when using project-relative logs/)
 logs/
 
+# Training run debris (keep comparison tables under training/artifacts/)
+lightning_logs/
+training/lightning_logs/
+training/artifacts/tft_v1/
+training/artifacts/lstm_baseline_v1/
+
 # Flask static build — tracked so Pi can git clone without Node/npm
 # (rebuild with: cd frontend && npm run build)

@@ -19,6 +19,13 @@ class Config:
         "INGEST_BEARER_TOKEN",
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImE3ZDJkMWY2LTliNTgtNDYyZC05MGZkLTA1YmViOTRlNWVjMSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc1Njg5OTIxOH0.siu-ITBJxhl5Jhap0ohHRdmd70kFY6oI0CevIgGgLnI",
     )
+    TFT_ARTIFACT_DIR = Path(
+        os.environ.get(
+            "TFT_ARTIFACT_DIR",
+            BASE_DIR / "training" / "artifacts" / "tft_v1",
+        )
+    )
+    TFT_ENCODER_HOURS = int(os.environ.get("TFT_ENCODER_HOURS", "336"))
 
 
 class DevelopmentConfig(Config):

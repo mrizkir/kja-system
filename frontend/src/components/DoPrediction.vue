@@ -29,7 +29,7 @@ const thresholdColor = computed(() => {
       <div class="title-row">
         <span>Prediksi DO (TFT)</span>
         <Badge
-          v-if="prediction"
+          v-if="prediction && prediction.confidence != null"
           :value="`${Math.round(prediction.confidence * 100)}%`"
           severity="info"
         />
@@ -37,7 +37,7 @@ const thresholdColor = computed(() => {
     </template>
     <template #content>
       <Skeleton v-if="loading" height="8rem" />
-      <div v-else-if="prediction" class="prediction-body">
+      <div v-else-if="prediction && !prediction.error" class="prediction-body">
         <div class="do-now mono">
           {{ prediction.do_now }} <span class="unit">mg/L</span>
         </div>
@@ -53,12 +53,13 @@ const thresholdColor = computed(() => {
           <span class="normal">≥5 Normal</span>
         </div>
         <div class="forecast-grid mono">
-          <div><span class="lbl">+2j</span> {{ prediction.do_2h }}</div>
-          <div><span class="lbl">+4j</span> {{ prediction.do_4h }}</div>
           <div><span class="lbl">+6j</span> {{ prediction.do_6h }}</div>
+          <div><span class="lbl">+24j</span> {{ prediction.do_24h }}</div>
+          <div><span class="lbl">+7hari</span> {{ prediction.do_7d }}</div>
           <div><span class="lbl">Latensi</span> {{ prediction.latency_ms }} ms</div>
         </div>
       </div>
+      <p v-else-if="prediction && prediction.error" class="empty">{{ prediction.error }}</p>
       <p v-else class="empty">Prediksi tidak tersedia.</p>
     </template>
   </Card>

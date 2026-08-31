@@ -2,3 +2,9 @@ Flask==3.1.0
 Flask-CORS==5.0.1
 SQLAlchemy==2.0.36
 python-dotenv==1.0.1
+gunicorn==23.0.0
+pandas==2.2.3
+numpy==1.26.4
+torch==2.2.2
+pytorch-lightning==2.2.5
+neuralforecast==1.7.5
