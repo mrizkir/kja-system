@@ -37,6 +37,14 @@ def _build_tft(
         scaler_type="robust",
         start_padding_enabled=True,
         early_stop_patience_steps=5,
+        # Reduced-capacity config for the pilot data scale (~2,928 hourly
+        # points): library defaults (n_head=4, hidden_size=128) overfit a
+        # dataset this small. Matches the capacity described in Chapter 3
+        # for the TFT-vs-LSTM comparison (Jawaban 6) -- keep in sync if
+        # either changes.
+        n_head=1,
+        hidden_size=64,
+        dropout=0.2,
         alias="TFT",
         accelerator="cpu",
         enable_checkpointing=False,

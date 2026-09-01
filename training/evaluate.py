@@ -95,6 +95,8 @@ def rolling_evaluate(
     collected: dict[int, tuple[list[float], list[float]]] = {
         hz: ([], []) for hz in horizons
     }
+    n_failed = 0
+    n_attempted = 0
 
     for uid, series in full.groupby("unique_id", sort=False):
         series = series.sort_values("ds").reset_index(drop=True)
@@ -102,8 +104,10 @@ def rolling_evaluate(
         if test_uid.empty:
             continue
         test_start = test_uid["ds"].min()
+        hist_uid = history.loc[history["unique_id"] == uid, "ds"]
+        hist_end = hist_uid.max() if not hist_uid.empty else test_start - pd.Timedelta(hours=1)
         last_ds = series["ds"].max()
-        origin_mask = (series["ds"] >= test_start - pd.Timedelta(hours=1)) & (
+        origin_mask = (series["ds"] >= hist_end) & (
             series["ds"] <= last_ds - pd.Timedelta(hours=h_max)
         )
         origins = series.loc[origin_mask, "ds"].iloc[::step_size]
@@ -113,6 +117,7 @@ def rolling_evaluate(
             window = series[series["ds"] <= origin].tail(encoder_length)
             if window.empty:
                 continue
+            n_attempted += 1
             try:
                 predict_kwargs = {"df": window}
                 if static_df is not None:
@@ -144,20 +149,39 @@ def rolling_evaluate(
                     )
                 fcst = nf.predict(**predict_kwargs)
             except Exception:
+                n_failed += 1
+                logger.exception(
+                    "Walk-forward predict failed unique_id=%s origin=%s",
+                    uid,
+                    origin,
+                )
                 continue
             fcst = fcst[fcst["unique_id"].astype(str) == str(uid)].sort_values("ds")
             if fcst.empty:
+                n_failed += 1
+                logger.warning(
+                    "Empty forecast unique_id=%s origin=%s", uid, origin
+                )
                 continue
             if pred_col is None:
                 pred_col = [c for c in fcst.columns if c not in ("unique_id", "ds")][0]
             for hz in horizons:
                 target_ds = origin + pd.Timedelta(hours=int(hz))
-                pred_row = fcst[fcst["ds"] == target_ds]
-                true_row = series[series["ds"] == target_ds]
+                pred_row = fcst.loc[fcst["ds"] == target_ds]
+                true_row = series.loc[series["ds"] == target_ds]
                 if pred_row.empty or true_row.empty:
                     continue
                 collected[hz][0].append(float(true_row["y"].iloc[0]))
                 collected[hz][1].append(float(pred_row[pred_col].iloc[0]))
+
+    if n_failed:
+        logger.warning(
+            "Walk-forward: %s/%s origins failed to produce a forecast",
+            n_failed,
+            n_attempted,
+        )
+    else:
+        logger.info("Walk-forward: %s origins produced forecasts", n_attempted)
 
     return {
         hz: (np.asarray(vals[0], dtype=float), np.asarray(vals[1], dtype=float))

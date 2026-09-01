@@ -35,11 +35,13 @@ FUTR_EXOG = ("rainfall_forecast_mm",)
 OPTIONAL_STATIC = ("species",)
 HORIZONS = (6, 24, 168)
 DEFAULT_ENCODER_LENGTH = 336
+ABLATION_ENCODER_LENGTHS = (168, 336, 504)
 TRAIN_RATIO = 0.70
 VAL_RATIO = 0.15
 TEST_RATIO = 0.15
 FREQ = "h"
 CSV_SEP = ";"
+GAP_INTERPOLATE_LIMIT = 3
 
 logger = logging.getLogger("kja.training")
 
@@ -63,9 +65,16 @@ def artifacts_dir() -> Path:
 
 
 def min_series_hours(encoder_length: int, max_horizon: int) -> int:
-    """Minimum hourly points per series so the 70% train split can form one window."""
+    """Minimum hourly points per series for 70/15/15 with usable train and test.
+
+    Train (70%) must hold at least one encoder+horizon window.
+    Test (15%) must hold at least max_horizon hours so +7d walk-forward
+    has a ground-truth target.
+    """
     min_train = encoder_length + max_horizon
-    return math.ceil(min_train / TRAIN_RATIO)
+    from_train = math.ceil(min_train / TRAIN_RATIO)
+    from_test = math.ceil(max_horizon / TEST_RATIO)
+    return max(from_train, from_test)
 
 
 def load_csv(path: str | Path) -> pd.DataFrame:
@@ -93,6 +102,7 @@ def load_csv(path: str | Path) -> pd.DataFrame:
     df["kja_id"] = df["kja_id"].astype(str)
     n_dup = int(df.duplicated(subset=["kja_id", "timestamp"]).sum())
     if n_dup:
+        logger.warning("Dropping %s duplicate kja_id+timestamp row(s)", n_dup)
         df = df.drop_duplicates(subset=["kja_id", "timestamp"], keep="last")
 
     return df.sort_values(["kja_id", "timestamp"]).reset_index(drop=True)
@@ -115,10 +125,19 @@ def resample_hourly(df: pd.DataFrame) -> pd.DataFrame:
             .resample(FREQ)
             .mean(numeric_only=True)
         )
-        hourly = hourly.interpolate(method="time", limit=3)
-        hourly = hourly.dropna(subset=["do_observed"])
         if hourly.empty:
             continue
+        full_idx = pd.date_range(hourly.index.min(), hourly.index.max(), freq=FREQ)
+        hourly = hourly.reindex(full_idx)
+        hourly.index.name = "timestamp"
+        hourly = hourly.interpolate(method="time", limit=GAP_INTERPOLATE_LIMIT)
+        n_gap = int(hourly["do_observed"].isna().sum()) if "do_observed" in hourly.columns else len(hourly)
+        if n_gap:
+            raise InsufficientDataError(
+                f"kja_id={uid}: {n_gap} unfilled hourly gap(s) after interpolating "
+                f"up to {GAP_INTERPOLATE_LIMIT} hours. Refusing irregular series "
+                f"(encoder windows are calendar hours at freq={FREQ})."
+            )
         hourly["kja_id"] = uid
         hourly = hourly.reset_index()
         parts.append(hourly)
@@ -141,7 +160,6 @@ def validate_volume(
     max_horizon: int,
 ) -> None:
     """Fail if any series is too short for encoder + max horizon under 70/15/15."""
-    min_train = encoder_length + max_horizon
     min_total = min_series_hours(encoder_length, max_horizon)
     short: list[str] = []
     for uid, group in hourly.groupby("kja_id"):
@@ -154,8 +172,8 @@ def validate_volume(
             "Insufficient hourly data for encoder_length "
             f"{encoder_length} + max_horizon {max_horizon}. "
             f"Need at least {min_total} hourly points per series "
-            f"(so the {int(TRAIN_RATIO * 100)}% train split has "
-            f">= {min_train} hours). Too short:\n  - "
+            f"(train 70% >= {encoder_length + max_horizon} hours and "
+            f"test 15% >= {max_horizon} hours). Too short:\n  - "
             + "\n  - ".join(short)
             + "\nReplace the CSV with a dataset that meets this contract; "
             "do not shorten the encoder or horizons to fit a sample file."

@@ -12,6 +12,8 @@ import pandas as pd
 from config import Config
 from training.preprocess import (
     DEFAULT_ENCODER_LENGTH,
+    FUTR_EXOG,
+    HIST_EXOG,
     HORIZONS,
     build_futr_frame,
     readings_to_nf_frame,
@@ -97,6 +99,20 @@ def _step_value(values: list[float], horizon: int) -> float:
     return round(float(values[idx]), 2)
 
 
+def _forecast_at_horizon(
+    fcst: pd.DataFrame,
+    last_ds: pd.Timestamp,
+    pred_col: str,
+    horizon: int,
+) -> float:
+    target = pd.Timestamp(last_ds) + pd.Timedelta(hours=int(horizon))
+    match = fcst.loc[fcst["ds"] == target, pred_col]
+    if not match.empty:
+        return round(float(match.iloc[0]), 2)
+    values = [float(v) for v in fcst.sort_values("ds")[pred_col].tolist()]
+    return _step_value(values, horizon)
+
+
 def _last_known_rainfall(frame: pd.DataFrame) -> float:
     if "rainfall_forecast_mm" not in frame.columns:
         return 0.0
@@ -180,10 +196,12 @@ def predict_do(
                 frame = frame.drop(columns=present)
                 predict_kwargs["static_df"] = static_df
         hist_exog = (_meta or {}).get("hist_exog")
-        futr_exog = (_meta or {}).get("futr_exog") or []
-        keep = ["unique_id", "ds", "y"]
-        if hist_exog:
-            keep.extend(hist_exog)
+        futr_exog = (_meta or {}).get("futr_exog")
+        if not hist_exog:
+            hist_exog = [c for c in HIST_EXOG if c in frame.columns]
+        if not futr_exog:
+            futr_exog = [c for c in FUTR_EXOG if c in frame.columns]
+        keep = ["unique_id", "ds", "y", *hist_exog]
         keep.extend(c for c in futr_exog if c not in keep)
         frame = frame[[c for c in keep if c in frame.columns]]
         predict_kwargs["df"] = frame
@@ -210,12 +228,12 @@ def predict_do(
         fcst = _nf.predict(**predict_kwargs)
         fcst = fcst.sort_values("ds")
         pred_col = [c for c in fcst.columns if c not in ("unique_id", "ds")][0]
-        values = [float(v) for v in fcst[pred_col].tolist()]
+        last_ds = pd.Timestamp(frame["ds"].iloc[-1])
         result = {
             "do_now": round(float(frame["y"].iloc[-1]), 2),
-            "do_6h": _step_value(values, HORIZONS[0]),
-            "do_24h": _step_value(values, HORIZONS[1]),
-            "do_7d": _step_value(values, HORIZONS[2]),
+            "do_6h": _forecast_at_horizon(fcst, last_ds, pred_col, HORIZONS[0]),
+            "do_24h": _forecast_at_horizon(fcst, last_ds, pred_col, HORIZONS[1]),
+            "do_7d": _forecast_at_horizon(fcst, last_ds, pred_col, HORIZONS[2]),
             "confidence": _confidence_from_metrics(),
             "latency_ms": round((time.perf_counter() - start) * 1000, 1),
         }

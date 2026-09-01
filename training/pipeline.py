@@ -142,7 +142,12 @@ def run_experiment(
         batch_size=batch_size,
     )
 
-    history = pd.concat([train, val], ignore_index=True)
+    history = (
+        pd.concat([train, val], ignore_index=True)
+        .sort_values(["unique_id", "ds"])
+        .reset_index(drop=True)
+    )
+    test = test.sort_values(["unique_id", "ds"]).reset_index(drop=True)
     val_size = int(val.groupby("unique_id").size().min()) if len(val) else 0
     static_df = None
     if static_names:
