@@ -280,7 +280,7 @@ def readings_to_nf_frame(
             "turbidity": item.get("turbidity"),
             "light_intensity": item.get("light_intensity"),
             "do_observed": float(y),
-            "rainfall_forecast_mm": None if rain is None else float(rain),
+            "rainfall_forecast_mm": 0.0 if rain is None else float(rain),
         }
         rows.append(row)
 

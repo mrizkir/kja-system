@@ -19,8 +19,12 @@ export const useSensorStore = defineStore('sensor', () => {
     return kjaUnits.value.find((u) => u.id === selectedKjaId.value) || kjaUnits.value[0] || null
   })
 
+  const unitAlerts = computed(() =>
+    alerts.value.filter((a) => a.kja_id === selectedKjaId.value)
+  )
+
   const criticalAlert = computed(() => {
-    const unread = alerts.value.filter((a) => !a.is_read)
+    const unread = unitAlerts.value.filter((a) => !a.is_read)
     const danger = unread.find((a) => a.severity === 'danger')
     if (danger) return danger
     const warn = unread.find((a) => a.severity === 'warn')
@@ -29,7 +33,10 @@ export const useSensorStore = defineStore('sensor', () => {
 
   function setData({ latest, units, alertList, historyData, prediction }) {
     if (latest) readings.value = latest
-    if (units) kjaUnits.value = units
+    if (units) {
+      kjaUnits.value = units
+      if (units.length === 1) selectedKjaId.value = units[0].id
+    }
     if (alertList) alerts.value = alertList
     if (historyData) history.value = historyData
     if (prediction) doPrediction.value = prediction
@@ -50,6 +57,7 @@ export const useSensorStore = defineStore('sensor', () => {
     readings,
     kjaUnits,
     alerts,
+    unitAlerts,
     selectedKjaId,
     history,
     doPrediction,

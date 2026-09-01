@@ -13,6 +13,7 @@ from database.models import (
     SensorReading,
     get_session,
 )
+from database.rainfall import backfill_history, future_rainfall_mm
 from database.seed import _alert_message, evaluate_parameter
 from inference.tft_model import predict_do
 
@@ -120,7 +121,7 @@ def _history_for_inference(session, kja_id: int) -> list[dict]:
         .order_by(SensorReading.timestamp.asc())
         .all()
     )
-    return [
+    raw = [
         {
             "timestamp": r.timestamp.isoformat(),
             "ph": r.ph,
@@ -132,6 +133,20 @@ def _history_for_inference(session, kja_id: int) -> list[dict]:
         }
         for r in history
     ]
+    return backfill_history(session, raw)
+
+
+def _origin_from_history(encoder_history: list[dict]) -> datetime:
+    if not encoder_history:
+        return datetime.utcnow()
+    raw = encoder_history[-1]["timestamp"]
+    text = str(raw).replace("Z", "+00:00")
+    ts = datetime.fromisoformat(text)
+    return ts.replace(tzinfo=None)
+
+
+def _future_rainfall_for_predict(session, encoder_history: list[dict]) -> list[dict]:
+    return future_rainfall_mm(session, _origin_from_history(encoder_history))
 
 
 @sensors_bp.route("/sensor/ingest", methods=["POST"])
@@ -180,7 +195,9 @@ def ingest_reading():
                 kja_id,
                 encoder_history,
                 static={"species": unit.species.value},
-                # TODO: wire BMKG forecast API here once available
+                future_rainfall_mm=_future_rainfall_for_predict(
+                    session, encoder_history
+                ),
             )
             if prediction.get("error") or prediction.get("do_now") is None:
                 return jsonify(
@@ -359,7 +376,9 @@ def inference_do(kja_id: int):
             kja_id,
             encoder_history,
             static={"species": unit.species.value},
-            # TODO: wire BMKG forecast API here once available
+            future_rainfall_mm=_future_rainfall_for_predict(
+                session, encoder_history
+            ),
         )
         return jsonify(
             {

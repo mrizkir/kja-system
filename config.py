@@ -26,6 +26,14 @@ class Config:
         )
     )
     TFT_ENCODER_HOURS = int(os.environ.get("TFT_ENCODER_HOURS", "336"))
+    VPS_RAINFALL_URL = os.environ.get("VPS_RAINFALL_URL", "")
+    VPS_RAINFALL_API_KEY = os.environ.get("VPS_RAINFALL_API_KEY", "")
+    RAINFALL_SYNC_TIMEOUT_SECONDS = int(
+        os.environ.get("RAINFALL_SYNC_TIMEOUT_SECONDS", "8")
+    )
+    RAINFALL_SYNC_INTERVAL_SECONDS = int(
+        os.environ.get("RAINFALL_SYNC_INTERVAL_SECONDS", "300")
+    )
 
 
 class DevelopmentConfig(Config):

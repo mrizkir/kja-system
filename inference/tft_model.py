@@ -209,6 +209,10 @@ def predict_do(
         )
 
     frame = frame.tail(encoder_length)
+    if "rainfall_forecast_mm" not in frame.columns:
+        frame["rainfall_forecast_mm"] = 0.0
+    else:
+        frame["rainfall_forecast_mm"] = frame["rainfall_forecast_mm"].fillna(0.0)
     try:
         predict_kwargs: dict = {"df": frame}
         stat_exog = (_meta or {}).get("stat_exog") or []

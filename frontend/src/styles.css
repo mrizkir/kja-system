@@ -219,6 +219,13 @@ body {
   color: var(--slate);
 }
 
+.iot-kja-fixed {
+  display: flex;
+  align-items: center;
+  min-height: 2.5rem;
+  color: var(--text);
+}
+
 .iot-form-actions {
   display: flex;
   align-items: end;
@@ -238,6 +245,13 @@ body {
 
 .poll-hint {
   color: var(--slate);
+}
+
+.rainfall-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
 }
 
 @media (max-width: 900px) {

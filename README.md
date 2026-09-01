@@ -56,7 +56,7 @@ pip install -r requirements.txt
 python database/seed.py
 ```
 
-This creates 4 KJA units with 7 days of hourly simulated sensor data (168 readings per unit).
+This creates 1 KJA unit (one farmer, one cage) with 7 days of hourly simulated sensor data.
 
 ### 4. Install frontend dependencies
 

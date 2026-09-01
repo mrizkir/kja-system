@@ -1,42 +1,27 @@
 <script setup>
 import { computed } from 'vue'
 import Card from 'primevue/card'
-import Chip from 'primevue/chip'
 
 const props = defineProps({
-  units: { type: Array, default: () => [] },
-  selectedKjaId: { type: Number, default: 1 }
+  units: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['select'])
+const unit = computed(() => props.units[0] || null)
 
-const positions = {
-  'KJA-01': { x: 18, y: 28 },
-  'KJA-02': { x: 42, y: 22 },
-  'KJA-03': { x: 62, y: 48 },
-  'KJA-04': { x: 78, y: 32 }
-}
-
-const markers = computed(() =>
-  props.units.map((unit) => ({
-    ...unit,
-    pos: positions[unit.name] || { x: 50, y: 50 },
-    statusColor:
-      unit.status === 'warning' ? 'var(--amber)' : unit.latest_reading?.status?.do_predicted === 'kritis' ? 'var(--coral)' : 'var(--teal)'
-  }))
-)
-
-function onSelect(id) {
-  emit('select', id)
-}
+const statusColor = computed(() => {
+  if (!unit.value) return 'var(--teal)'
+  if (unit.value.status === 'warning') return 'var(--amber)'
+  if (unit.value.latest_reading?.status?.do_predicted === 'kritis') return 'var(--coral)'
+  return 'var(--teal)'
+})
 </script>
 
 <template>
   <Card>
-    <template #title>Peta KJA — Teluk Bintan</template>
+    <template #title>Lokasi — Teluk Bintan</template>
     <template #content>
       <div class="map-wrap">
-        <svg viewBox="0 0 100 60" class="map-svg" aria-label="Peta lokasi KJA">
+        <svg viewBox="0 0 100 60" class="map-svg" aria-label="Lokasi KJA petani">
           <defs>
             <linearGradient id="water" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stop-color="#0a1f3d" />
@@ -50,27 +35,18 @@ function onSelect(id) {
             opacity="0.6"
           />
           <circle
-            v-for="marker in markers"
-            :key="marker.id"
-            :cx="marker.pos.x"
-            :cy="marker.pos.y"
+            v-if="unit"
+            cx="50"
+            cy="32"
             r="3.2"
-            :fill="marker.statusColor"
-            :stroke="selectedKjaId === marker.id ? 'var(--white)' : 'transparent'"
+            :fill="statusColor"
+            stroke="var(--white)"
             stroke-width="1.2"
-            class="marker-dot"
-            @click="onSelect(marker.id)"
           />
         </svg>
-        <div class="chip-row">
-          <Chip
-            v-for="marker in markers"
-            :key="marker.id"
-            :label="marker.name"
-            :class="{ active: selectedKjaId === marker.id }"
-            @click="onSelect(marker.id)"
-          />
-        </div>
+        <p v-if="unit" class="unit-caption">
+          {{ unit.name }} · {{ unit.farmer_name }}
+        </p>
       </div>
     </template>
   </Card>
@@ -91,24 +67,9 @@ function onSelect(id) {
   background: var(--bg3);
 }
 
-.marker-dot {
-  cursor: pointer;
-}
-
-.chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.chip-row :deep(.p-chip) {
-  cursor: pointer;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-}
-
-.chip-row :deep(.p-chip.active) {
-  border-color: var(--teal);
-  color: var(--teal);
+.unit-caption {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--slate);
 }
 </style>

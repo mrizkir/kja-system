@@ -43,7 +43,6 @@ function onRead(id) {
         striped-rows
         data-key="id"
       >
-        <Column field="kja_name" header="KJA" style="width: 5rem" />
         <Column field="parameter" header="Parameter" style="width: 6rem" />
         <Column header="Tingkat" style="width: 6rem">
           <template #body="{ data }">

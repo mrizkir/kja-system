@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from database.models import Alert, KjaUnit, get_session
 
@@ -9,13 +9,14 @@ alerts_bp = Blueprint("alerts", __name__, url_prefix="/api/alert")
 def list_alerts():
     session = get_session()
     try:
-        alerts = (
+        query = (
             session.query(Alert, KjaUnit.name)
             .join(KjaUnit, Alert.kja_id == KjaUnit.id)
-            .order_by(Alert.timestamp.desc())
-            .limit(50)
-            .all()
         )
+        kja_id = request.args.get("kja_id", type=int)
+        if kja_id is not None:
+            query = query.filter(Alert.kja_id == kja_id)
+        alerts = query.order_by(Alert.timestamp.desc()).limit(50).all()
 
         return jsonify(
             [

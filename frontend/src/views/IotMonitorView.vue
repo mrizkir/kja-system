@@ -5,7 +5,6 @@ import Badge from 'primevue/badge'
 import Button from 'primevue/button'
 import InputNumber from 'primevue/inputnumber'
 import Message from 'primevue/message'
-import Select from 'primevue/select'
 import Toast from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
 
@@ -20,6 +19,8 @@ const error = ref(null)
 const lastPollAt = ref(null)
 const sending = ref(false)
 const lastIngest = ref(null)
+const rainfallFetchedAt = ref(null)
+const rainfallRowCount = ref(0)
 
 const form = reactive({
   kja_id: 1,
@@ -29,13 +30,6 @@ const form = reactive({
   kekeruhan: 10.0,
   status: 'Data Masuk'
 })
-
-const kjaOptions = [
-  { label: 'NODE1 → KJA-01', value: 1 },
-  { label: 'NODE2 → KJA-02', value: 2 },
-  { label: 'NODE3 → KJA-03', value: 3 },
-  { label: 'NODE4 → KJA-04', value: 4 }
-]
 
 // Same default as receiver.ino BEARER_TOKEN / Config.INGEST_BEARER_TOKEN
 const INGEST_BEARER =
@@ -94,11 +88,21 @@ const rows = computed(() =>
 
 const freshCount = computed(() => rows.value.filter((r) => r.freshness.label === 'Segar').length)
 
+const rainfallFreshness = computed(() => freshness(rainfallFetchedAt.value))
+
 async function poll() {
   try {
-    const response = await fetch('/api/sensor/latest')
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    readings.value = await response.json()
+    const [sensorRes, rainRes] = await Promise.all([
+      fetch('/api/sensor/latest'),
+      fetch('/api/weather/rainfall/status')
+    ])
+    if (!sensorRes.ok) throw new Error(`HTTP ${sensorRes.status}`)
+    readings.value = await sensorRes.json()
+    if (rainRes.ok) {
+      const rain = await rainRes.json()
+      rainfallFetchedAt.value = rain.fetched_at || null
+      rainfallRowCount.value = rain.row_count ?? 0
+    }
     error.value = null
     lastPollAt.value = new Date()
   } catch (err) {
@@ -177,7 +181,7 @@ onUnmounted(() => {
           <RouterLink class="nav-link" to="/">Dashboard</RouterLink>
           <RouterLink class="nav-link" to="/iot">Monitor IoT</RouterLink>
         </nav>
-        <Badge :value="`${freshCount}/${rows.length || 4} segar`" severity="info" />
+        <Badge :value="`${freshCount}/${rows.length || 1} segar`" severity="info" />
         <Badge value="POLL 5s" severity="success" />
       </div>
     </header>
@@ -192,6 +196,21 @@ onUnmounted(() => {
         · last poll {{ lastPollAt.toLocaleTimeString('id-ID') }}
       </span>
     </Message>
+    <p class="dashboard-subtitle rainfall-status">
+      Curah hujan (cache VPS):
+      <template v-if="rainfallFetchedAt">
+        <Badge
+          :value="rainfallFreshness.label"
+          :severity="rainfallFreshness.severity"
+        />
+        <span class="mono">
+          · {{ formatAge(rainfallFetchedAt) }}
+          · {{ formatTime(rainfallFetchedAt) }}
+          · {{ rainfallRowCount }} jam
+        </span>
+      </template>
+      <span v-else>belum ada data (sync cron belum berhasil)</span>
+    </p>
 
     <section class="iot-table-wrap">
       <table class="iot-table">
@@ -246,7 +265,7 @@ onUnmounted(() => {
       <div class="iot-form">
         <label>
           <span>KJA</span>
-          <Select v-model="form.kja_id" :options="kjaOptions" option-label="label" option-value="value" />
+          <span class="mono iot-kja-fixed">NODE1 → KJA-01</span>
         </label>
         <label>
           <span>pH</span>

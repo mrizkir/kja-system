@@ -20,6 +20,11 @@ logger = logging.getLogger("kja.training")
 
 R2_THRESHOLD = 0.85
 MAPE_THRESHOLD = 10.0
+# Below this many walk-forward origins, R²/MAPE are noise (e.g. n=3 on the
+# short synthetic practice dataset produced R²=0.99 by chance) -- verdict is
+# reported as INSUFFICIENT_N instead of PASS/FAIL so a code-verification run
+# can never be mistaken for a real result.
+MIN_N_FOR_VERDICT = 30
 HORIZON_LABELS = {6: "6h", 24: "24h", 168: "7d"}
 COMPARISON_CSV = "comparison_v1.csv"
 COMPARISON_MD = "comparison_v1.md"
@@ -99,13 +104,24 @@ def metrics_for_horizon(
         and r2 > R2_THRESHOLD
         and mape < MAPE_THRESHOLD
     )
+    if 0 < y_true.size < MIN_N_FOR_VERDICT:
+        verdict = "INSUFFICIENT_N"
+        logger.warning(
+            "n=%s walk-forward origins (< %s) -- R²/RMSE/MAPE/PICP are not "
+            "statistically meaningful; reporting INSUFFICIENT_N instead of "
+            "PASS/FAIL. Use a longer dataset before treating this as a result.",
+            y_true.size,
+            MIN_N_FOR_VERDICT,
+        )
+    else:
+        verdict = "PASS" if passed else "FAIL"
     return {
         "r2": None if np.isnan(r2) else round(r2, 4),
         "rmse": None if np.isnan(rmse) else round(rmse, 4),
         "mape": None if np.isnan(mape) else round(mape, 4),
         "picp": None if np.isnan(picp) else round(picp, 2),
         "n": int(y_true.size),
-        "pass": "PASS" if passed else "FAIL",
+        "pass": verdict,
     }
 
 
@@ -316,7 +332,11 @@ def _to_markdown(table: pd.DataFrame) -> str:
         "R² / RMSE / MAPE use the Q50 (median) forecast; PICP is the share of "
         "observations inside [Q10, Q90] and is diagnostic only. "
         "Targets: R² > 0.85, MAPE < 10% (Section 3.3.2.5). "
-        "RMSE and PICP have no pass threshold.\n\n"
+        "RMSE and PICP have no pass threshold. "
+        f"A row with fewer than {MIN_N_FOR_VERDICT} walk-forward origins is "
+        "marked **INSUFFICIENT_N** rather than PASS/FAIL -- the metrics are "
+        "reported for visibility but are not statistically meaningful and "
+        "must not be cited as a result.\n\n"
     )
     cols = list(table.columns)
     lines = [

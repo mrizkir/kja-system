@@ -83,6 +83,19 @@ class Alert(Base):
     kja_unit: Mapped["KjaUnit"] = relationship(back_populates="alerts")
 
 
+class RainfallForecast(Base):
+    """Site-wide rainfall forecast cache (one location for all cages)."""
+
+    __tablename__ = "rainfall_forecasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    target_timestamp: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, unique=True, index=True
+    )
+    rainfall_forecast_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+
+
 _engine = None
 _SessionLocal = None
 

@@ -22,7 +22,7 @@ export function useSensorData() {
       const [latest, units, alertList, historyData, prediction] = await Promise.all([
         fetchJson('/api/sensor/latest'),
         fetchJson('/api/kja/units'),
-        fetchJson('/api/alert/list'),
+        fetchJson(`/api/alert/list?kja_id=${selectedKjaId}`),
         fetchJson(`/api/sensor/history/${selectedKjaId}?hours=24`),
         fetchJson(`/api/inference/do/${selectedKjaId}`)
       ])

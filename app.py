@@ -10,6 +10,7 @@ from flask_cors import CORS
 
 from api.alerts import alerts_bp
 from api.sensors import sensors_bp
+from api.weather import weather_bp
 from config import config_by_name
 from database.models import Base, get_engine
 
@@ -78,6 +79,7 @@ def create_app(config_name: str | None = None) -> Flask:
 
     app.register_blueprint(sensors_bp)
     app.register_blueprint(alerts_bp)
+    app.register_blueprint(weather_bp)
 
     @app.route("/api/health")
     def health():

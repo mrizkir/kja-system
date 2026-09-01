@@ -44,10 +44,6 @@ function onNewDanger(alert) {
   })
 }
 
-function onSelectKja(id) {
-  store.selectKja(id)
-}
-
 async function onMarkRead(id) {
   await markAlertRead(id)
 }
@@ -110,7 +106,7 @@ onUnmounted(() => {
       {{ criticalAlert.message }}
     </Message>
     <Message v-else severity="success" :closable="false">
-      Semua parameter dalam batas normal untuk unit terpilih.
+      Semua parameter dalam batas normal.
     </Message>
 
     <Message v-if="error" severity="error" :closable="false">
@@ -170,18 +166,14 @@ onUnmounted(() => {
 
     <section class="bottom-grid">
       <div class="left-column">
-        <KjaMap
-          :units="store.kjaUnits"
-          :selected-kja-id="store.selectedKjaId"
-          @select="onSelectKja"
-        />
+        <KjaMap :units="store.kjaUnits" />
         <TrendChart
           :history="store.history"
           :kja-name="store.selectedUnit?.name || 'KJA-01'"
         />
       </div>
       <div class="right-column">
-        <AlertPanel :alerts="store.alerts" @read="onMarkRead" />
+        <AlertPanel :alerts="store.unitAlerts" @read="onMarkRead" />
         <DoPrediction :prediction="store.doPrediction" :loading="store.loading" />
       </div>
     </section>

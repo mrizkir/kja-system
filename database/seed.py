@@ -71,25 +71,15 @@ def evaluate_parameter(parameter: str, value: float) -> AlertSeverity | None:
 
 
 def _generate_reading(kja_name: str, hour_index: int, total_hours: int) -> dict:
-    """Generate one hourly reading with scenario-specific patterns."""
+    """Generate one hourly reading (single-farmer / single-cage demo)."""
     rng = random.Random(f"{kja_name}-{hour_index}")
 
-    # Monsoon: slightly low salinity across all units
     salinity = round(rng.uniform(24.0, 27.5), 2)
-
     ph = round(rng.uniform(7.6, 8.4), 2)
     temperature = round(rng.uniform(26.5, 29.5), 2)
     turbidity = round(rng.uniform(8.0, 14.0), 2)
     light_intensity = round(rng.uniform(12000, 45000), 0)
-
-    # KJA-03: declining DO trend (danger scenario)
-    if kja_name == "KJA-03":
-        progress = hour_index / max(total_hours - 1, 1)
-        do_predicted = round(6.8 - (progress * 3.2) + rng.uniform(-0.15, 0.15), 2)
-        if hour_index >= total_hours - 6:
-            turbidity = round(rng.uniform(18.0, 32.0), 2)
-    else:
-        do_predicted = round(rng.uniform(5.2, 7.5), 2)
+    do_predicted = round(rng.uniform(5.2, 7.5), 2)
 
     return {
         "ph": ph,
@@ -122,10 +112,12 @@ def seed_database() -> None:
     session = get_session()
 
     units = [
-        KjaUnit(name="KJA-01", species=Species.grouper, status="active", farmer_name="Bapak Ahmad"),
-        KjaUnit(name="KJA-02", species=Species.snapper, status="active", farmer_name="Ibu Siti"),
-        KjaUnit(name="KJA-03", species=Species.grouper, status="warning", farmer_name="Bapak Rizki"),
-        KjaUnit(name="KJA-04", species=Species.snapper, status="active", farmer_name="Bapak Dani"),
+        KjaUnit(
+            name="KJA-01",
+            species=Species.grouper,
+            status="active",
+            farmer_name="Bapak Ahmad",
+        ),
     ]
     session.add_all(units)
     session.flush()
@@ -182,7 +174,7 @@ def seed_database() -> None:
 
     session.commit()
     session.close()
-    print("Database seeded: 4 KJA units, 168 readings each, alerts generated.")
+    print("Database seeded: 1 KJA unit, 168 hourly readings, alerts generated.")
 
 
 if __name__ == "__main__":
