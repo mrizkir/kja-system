@@ -115,7 +115,8 @@ def _to_markdown(table: pd.DataFrame) -> str:
         "# Encoder-length ablation\n\n"
         "Candidate lookback windows evaluated per horizon (not averaged), "
         "used to select encoder_length empirically instead of a fixed "
-        "literature rule. Targets: R² > 0.85, MAPE < 10% (Section 3.3.2.5).\n\n"
+        "literature rule. R² / MAPE use Q50; PICP (Q10–Q90 coverage) is "
+        "diagnostic only. Targets: R² > 0.85, MAPE < 10% (Section 3.3.2.5).\n\n"
     )
     cols = [c for c in table.columns if c != "model_horizon"]
     lines = [

@@ -171,6 +171,11 @@ def run_experiment(
     logger.info("Saving artifact to %s", artifact_path)
     nf.save(path=str(artifact_path), overwrite=True, save_dataset=False)
 
+    quantiles = None
+    loss = getattr(model, "loss", None)
+    raw_qs = getattr(loss, "quantiles", None)
+    if raw_qs is not None:
+        quantiles = [float(q) for q in raw_qs.detach().cpu().tolist()]
     meta = {
         "model": model_name,
         "artifact": artifact_name,
@@ -180,6 +185,7 @@ def run_experiment(
         "hist_exog": hist_exog,
         "futr_exog": futr_exog,
         "stat_exog": static_names,
+        "quantiles": quantiles,
         "freq": FREQ,
         "data": str(data_path),
     }
@@ -201,11 +207,12 @@ def run_experiment(
     rows = rows_for_model(model_name, per_horizon, horizons=horizons)
     for row in rows:
         logger.info(
-            "  %s  R²=%s  RMSE=%s  MAPE=%s  n=%s  %s",
+            "  %s  R²=%s  RMSE=%s  MAPE=%s  PICP=%s  n=%s  %s",
             row["model_horizon"],
             row["r2"],
             row["rmse"],
             row["mape"],
+            row.get("picp"),
             row["n"],
             row["pass"],
         )

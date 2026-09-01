@@ -22,7 +22,7 @@ def _build_tft(
     max_steps: int,
     batch_size: int,
 ):
-    from neuralforecast.losses.pytorch import MAE
+    from neuralforecast.losses.pytorch import MQLoss
     from neuralforecast.models import TFT
 
     return TFT(
@@ -31,7 +31,8 @@ def _build_tft(
         hist_exog_list=hist_exog_list,
         futr_exog_list=futr_exog_list or [],
         stat_exog_list=stat_exog_list or [],
-        loss=MAE(),
+        # Lim et al. 2021: Q10 / Q50 / Q90 (80% prediction interval around the median).
+        loss=MQLoss(quantiles=[0.1, 0.5, 0.9]),
         max_steps=max_steps,
         batch_size=batch_size,
         scaler_type="robust",

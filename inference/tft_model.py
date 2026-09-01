@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from config import Config
+from training.evaluate import forecast_columns
 from training.preprocess import (
     DEFAULT_ENCODER_LENGTH,
     FUTR_EXOG,
@@ -39,12 +40,16 @@ def _metrics_path() -> Path:
     return artifact_dir().parent / "tft_v1_metrics.json"
 
 
+def _empty_quantiles() -> dict:
+    return {"q10": None, "q50": None, "q90": None}
+
+
 def _empty_result(latency_ms: float, error: str) -> dict:
     return {
         "do_now": None,
-        "do_6h": None,
-        "do_24h": None,
-        "do_7d": None,
+        "do_6h": _empty_quantiles(),
+        "do_24h": _empty_quantiles(),
+        "do_7d": _empty_quantiles(),
         "confidence": None,
         "latency_ms": latency_ms,
         "error": error,
@@ -113,6 +118,21 @@ def _forecast_at_horizon(
     return _step_value(values, horizon)
 
 
+def _quantile_at_horizon(
+    fcst: pd.DataFrame,
+    last_ds: pd.Timestamp,
+    point_col: str,
+    lo_col: str | None,
+    hi_col: str | None,
+    horizon: int,
+) -> dict:
+    return {
+        "q10": _forecast_at_horizon(fcst, last_ds, lo_col, horizon) if lo_col else None,
+        "q50": _forecast_at_horizon(fcst, last_ds, point_col, horizon),
+        "q90": _forecast_at_horizon(fcst, last_ds, hi_col, horizon) if hi_col else None,
+    }
+
+
 def _last_known_rainfall(frame: pd.DataFrame) -> float:
     if "rainfall_forecast_mm" not in frame.columns:
         return 0.0
@@ -162,10 +182,11 @@ def predict_do(
     static: dict[str, object] | None = None,
     future_rainfall_mm: list[dict] | None = None,
 ) -> dict:
-    """Forecast DO at +6h, +24h, +7d from hourly-resampled history.
+    """Forecast DO quantiles (Q10/Q50/Q90) at +6h, +24h, +7d.
 
-    Returns the production contract. On missing artifact or inference
-    failure, numeric fields are None and ``error`` explains why.
+    Each horizon field is ``{q10, q50, q90}``. Point-accuracy consumers
+    should use ``q50``. On missing artifact or inference failure, quantile
+    fields are null and ``error`` explains why.
     """
     start = time.perf_counter()
     _load_model()
@@ -226,14 +247,21 @@ def predict_do(
                 rain_vals,
             )
         fcst = _nf.predict(**predict_kwargs)
+        fcst = fcst.reset_index() if "ds" not in fcst.columns else fcst
         fcst = fcst.sort_values("ds")
-        pred_col = [c for c in fcst.columns if c not in ("unique_id", "ds")][0]
+        point_col, lo_col, hi_col = forecast_columns(fcst)
         last_ds = pd.Timestamp(frame["ds"].iloc[-1])
         result = {
             "do_now": round(float(frame["y"].iloc[-1]), 2),
-            "do_6h": _forecast_at_horizon(fcst, last_ds, pred_col, HORIZONS[0]),
-            "do_24h": _forecast_at_horizon(fcst, last_ds, pred_col, HORIZONS[1]),
-            "do_7d": _forecast_at_horizon(fcst, last_ds, pred_col, HORIZONS[2]),
+            "do_6h": _quantile_at_horizon(
+                fcst, last_ds, point_col, lo_col, hi_col, HORIZONS[0]
+            ),
+            "do_24h": _quantile_at_horizon(
+                fcst, last_ds, point_col, lo_col, hi_col, HORIZONS[1]
+            ),
+            "do_7d": _quantile_at_horizon(
+                fcst, last_ds, point_col, lo_col, hi_col, HORIZONS[2]
+            ),
             "confidence": _confidence_from_metrics(),
             "latency_ms": round((time.perf_counter() - start) * 1000, 1),
         }

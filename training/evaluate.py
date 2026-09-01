@@ -51,10 +51,47 @@ def _mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(np.abs(y_true[mask] - y_pred[mask]) / denom[mask]) * 100.0)
 
 
-def metrics_for_horizon(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+def _picp(y_true: np.ndarray, q_lo: np.ndarray, q_hi: np.ndarray) -> float:
+    """Prediction Interval Coverage Probability: share of y in [Q10, Q90]."""
+    if y_true.size == 0 or q_lo.size != y_true.size or q_hi.size != y_true.size:
+        return float("nan")
+    inside = (y_true >= q_lo) & (y_true <= q_hi)
+    return float(np.mean(inside) * 100.0)
+
+
+def forecast_columns(fcst: pd.DataFrame) -> tuple[str, str | None, str | None]:
+    """Return (point_col, q10_col, q90_col).
+
+    Point accuracy uses Q50 (``*-median``) when MQLoss produced quantile
+    columns; otherwise the single point-forecast column (LSTM / MAE).
+    """
+    cols = [c for c in fcst.columns if c not in ("unique_id", "ds")]
+    if not cols:
+        raise ValueError("Forecast frame has no prediction columns")
+    median = next((c for c in cols if str(c).endswith("-median")), None)
+    lo_matches = [c for c in cols if "-lo-" in str(c)]
+    hi_matches = [c for c in cols if "-hi-" in str(c)]
+    lo = next((c for c in lo_matches if "80" in str(c)), lo_matches[0] if lo_matches else None)
+    hi = next((c for c in hi_matches if "80" in str(c)), hi_matches[0] if hi_matches else None)
+    if median is not None:
+        return median, lo, hi
+    return cols[0], None, None
+
+
+def metrics_for_horizon(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    q_lo: np.ndarray | None = None,
+    q_hi: np.ndarray | None = None,
+) -> dict:
     r2 = _r2(y_true, y_pred)
     rmse = _rmse(y_true, y_pred)
     mape = _mape(y_true, y_pred)
+    picp = (
+        _picp(y_true, q_lo, q_hi)
+        if q_lo is not None and q_hi is not None
+        else float("nan")
+    )
     passed = (
         y_true.size > 0
         and not np.isnan(r2)
@@ -66,6 +103,7 @@ def metrics_for_horizon(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
         "r2": None if np.isnan(r2) else round(r2, 4),
         "rmse": None if np.isnan(rmse) else round(rmse, 4),
         "mape": None if np.isnan(mape) else round(mape, 4),
+        "picp": None if np.isnan(picp) else round(picp, 2),
         "n": int(y_true.size),
         "pass": "PASS" if passed else "FAIL",
     }
@@ -80,8 +118,8 @@ def rolling_evaluate(
     step_size: int = 6,
     static_df: pd.DataFrame | None = None,
     has_futr_exog: bool = False,
-) -> dict[int, tuple[np.ndarray, np.ndarray]]:
-    """Walk-forward eval on the test split; returns {horizon: (y_true, y_pred)}."""
+) -> dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    """Walk-forward eval; returns {horizon: (y_true, y_pred_q50, q10, q90)}."""
     h_max = max(horizons)
     full = pd.concat([history, test], ignore_index=True)
     n_series = full["unique_id"].nunique()
@@ -92,8 +130,8 @@ def rolling_evaluate(
         h_max,
         step_size,
     )
-    collected: dict[int, tuple[list[float], list[float]]] = {
-        hz: ([], []) for hz in horizons
+    collected: dict[int, dict[str, list[float]]] = {
+        hz: {"y_true": [], "y_pred": [], "q10": [], "q90": []} for hz in horizons
     }
     n_failed = 0
     n_attempted = 0
@@ -111,7 +149,7 @@ def rolling_evaluate(
             series["ds"] <= last_ds - pd.Timedelta(hours=h_max)
         )
         origins = series.loc[origin_mask, "ds"].iloc[::step_size]
-        pred_col = None
+        point_col = lo_col = hi_col = None
 
         for origin in origins:
             window = series[series["ds"] <= origin].tail(encoder_length)
@@ -156,6 +194,8 @@ def rolling_evaluate(
                     origin,
                 )
                 continue
+            if "unique_id" not in fcst.columns:
+                fcst = fcst.reset_index()
             fcst = fcst[fcst["unique_id"].astype(str) == str(uid)].sort_values("ds")
             if fcst.empty:
                 n_failed += 1
@@ -163,16 +203,20 @@ def rolling_evaluate(
                     "Empty forecast unique_id=%s origin=%s", uid, origin
                 )
                 continue
-            if pred_col is None:
-                pred_col = [c for c in fcst.columns if c not in ("unique_id", "ds")][0]
+            if point_col is None:
+                point_col, lo_col, hi_col = forecast_columns(fcst)
             for hz in horizons:
                 target_ds = origin + pd.Timedelta(hours=int(hz))
                 pred_row = fcst.loc[fcst["ds"] == target_ds]
                 true_row = series.loc[series["ds"] == target_ds]
                 if pred_row.empty or true_row.empty:
                     continue
-                collected[hz][0].append(float(true_row["y"].iloc[0]))
-                collected[hz][1].append(float(pred_row[pred_col].iloc[0]))
+                bucket = collected[hz]
+                bucket["y_true"].append(float(true_row["y"].iloc[0]))
+                bucket["y_pred"].append(float(pred_row[point_col].iloc[0]))
+                if lo_col is not None and hi_col is not None:
+                    bucket["q10"].append(float(pred_row[lo_col].iloc[0]))
+                    bucket["q90"].append(float(pred_row[hi_col].iloc[0]))
 
     if n_failed:
         logger.warning(
@@ -184,20 +228,32 @@ def rolling_evaluate(
         logger.info("Walk-forward: %s origins produced forecasts", n_attempted)
 
     return {
-        hz: (np.asarray(vals[0], dtype=float), np.asarray(vals[1], dtype=float))
-        for hz, vals in collected.items()
+        hz: (
+            np.asarray(bucket["y_true"], dtype=float),
+            np.asarray(bucket["y_pred"], dtype=float),
+            np.asarray(bucket["q10"], dtype=float),
+            np.asarray(bucket["q90"], dtype=float),
+        )
+        for hz, bucket in collected.items()
     }
 
 
 def rows_for_model(
     model_name: str,
-    per_horizon: dict[int, tuple[np.ndarray, np.ndarray]],
+    per_horizon: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     horizons: tuple[int, ...] = HORIZONS,
 ) -> list[dict]:
     rows = []
+    empty = np.array([], dtype=float)
     for hz in horizons:
-        y_true, y_pred = per_horizon.get(hz, (np.array([]), np.array([])))
-        metrics = metrics_for_horizon(y_true, y_pred)
+        packed = per_horizon.get(hz, (empty, empty, empty, empty))
+        y_true, y_pred, q10, q90 = packed
+        metrics = metrics_for_horizon(
+            y_true,
+            y_pred,
+            q_lo=q10 if q10.size else None,
+            q_hi=q90 if q90.size else None,
+        )
         label = HORIZON_LABELS.get(hz, f"{hz}h")
         rows.append(
             {
@@ -218,7 +274,17 @@ def write_comparison_table(
     dest_dir = dest_dir or artifacts_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
     csv_path = dest_dir / COMPARISON_CSV
-    columns = ["model_horizon", "model", "horizon", "r2", "rmse", "mape", "n", "pass"]
+    columns = [
+        "model_horizon",
+        "model",
+        "horizon",
+        "r2",
+        "rmse",
+        "mape",
+        "picp",
+        "n",
+        "pass",
+    ]
 
     if csv_path.is_file():
         existing = pd.read_csv(csv_path)
@@ -247,8 +313,10 @@ def _to_markdown(table: pd.DataFrame) -> str:
     header = (
         "# DO forecast comparison (RO2)\n\n"
         "Metrics are computed **separately per horizon** (not averaged). "
+        "R² / RMSE / MAPE use the Q50 (median) forecast; PICP is the share of "
+        "observations inside [Q10, Q90] and is diagnostic only. "
         "Targets: R² > 0.85, MAPE < 10% (Section 3.3.2.5). "
-        "RMSE is reported without a pass threshold.\n\n"
+        "RMSE and PICP have no pass threshold.\n\n"
     )
     cols = list(table.columns)
     lines = [

@@ -21,6 +21,18 @@ const thresholdColor = computed(() => {
   if (doVal < 5) return 'var(--amber)'
   return 'var(--teal)'
 })
+
+function q50(value) {
+  if (value == null) return '—'
+  if (typeof value === 'number') return value
+  return value.q50 ?? '—'
+}
+
+function interval(value) {
+  if (value == null || typeof value === 'number') return ''
+  if (value.q10 == null || value.q90 == null) return ''
+  return `${value.q10}–${value.q90}`
+}
 </script>
 
 <template>
@@ -53,9 +65,21 @@ const thresholdColor = computed(() => {
           <span class="normal">≥5 Normal</span>
         </div>
         <div class="forecast-grid mono">
-          <div><span class="lbl">+6j</span> {{ prediction.do_6h }}</div>
-          <div><span class="lbl">+24j</span> {{ prediction.do_24h }}</div>
-          <div><span class="lbl">+7hari</span> {{ prediction.do_7d }}</div>
+          <div>
+            <span class="lbl">+6j</span>
+            {{ q50(prediction.do_6h) }}
+            <span v-if="interval(prediction.do_6h)" class="interval">{{ interval(prediction.do_6h) }}</span>
+          </div>
+          <div>
+            <span class="lbl">+24j</span>
+            {{ q50(prediction.do_24h) }}
+            <span v-if="interval(prediction.do_24h)" class="interval">{{ interval(prediction.do_24h) }}</span>
+          </div>
+          <div>
+            <span class="lbl">+7hari</span>
+            {{ q50(prediction.do_7d) }}
+            <span v-if="interval(prediction.do_7d)" class="interval">{{ interval(prediction.do_7d) }}</span>
+          </div>
           <div><span class="lbl">Latensi</span> {{ prediction.latency_ms }} ms</div>
         </div>
       </div>
@@ -124,6 +148,13 @@ const thresholdColor = computed(() => {
   font-size: 0.68rem;
   color: var(--slate);
   margin-bottom: 0.15rem;
+}
+
+.interval {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--slate);
+  margin-top: 0.15rem;
 }
 
 .empty {
