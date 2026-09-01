@@ -8,3 +8,6 @@ numpy==1.26.4
 torch==2.2.2
 pytorch-lightning==2.2.5
 neuralforecast==1.7.5
+# pytorch-lightning 2.2.5 still imports pkg_resources (removed in setuptools 82+)
+setuptools>=69,<81
+
