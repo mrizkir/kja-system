@@ -1,0 +1,35 @@
+[
+  {
+    "model_horizon": "TFT-6h",
+    "model": "TFT",
+    "horizon": "6h",
+    "r2": 0.9854,
+    "rmse": 0.1235,
+    "mape": 1.8461,
+    "picp": 66.67,
+    "n": 3,
+    "pass": "PASS"
+  },
+  {
+    "model_horizon": "TFT-24h",
+    "model": "TFT",
+    "horizon": "24h",
+    "r2": 0.9859,
+    "rmse": 0.0552,
+    "mape": 0.6695,
+    "picp": 100.0,
+    "n": 3,
+    "pass": "PASS"
+  },
+  {
+    "model_horizon": "TFT-7d",
+    "model": "TFT",
+    "horizon": "7d",
+    "r2": 0.0891,
+    "rmse": 0.318,
+    "mape": 4.5621,
+    "picp": 33.33,
+    "n": 3,
+    "pass": "FAIL"
+  }
+]

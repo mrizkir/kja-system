@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from training.device import lightning_accelerator
 from training.pipeline import build_arg_parser, parse_horizons, run_experiment
 
 
@@ -42,7 +43,7 @@ def _build_lstm(
         scaler_type="robust",
         early_stop_patience_steps=5,
         alias="LSTM",
-        accelerator="cpu",
+        accelerator=lightning_accelerator(),
         enable_checkpointing=False,
     )
 

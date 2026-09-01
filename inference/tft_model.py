@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from config import Config
+from training.device import apply_runtime_accelerator
 from training.evaluate import forecast_columns
 from training.preprocess import (
     DEFAULT_ENCODER_LENGTH,
@@ -87,6 +88,7 @@ def _load_model() -> None:
         from neuralforecast import NeuralForecast
 
         _nf = NeuralForecast.load(path=str(path))
+        apply_runtime_accelerator(_nf)
         if _meta_path().is_file():
             _meta = json.loads(_meta_path().read_text(encoding="utf-8"))
     except Exception as exc:

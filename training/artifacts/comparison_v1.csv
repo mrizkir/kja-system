@@ -1,0 +1,4 @@
+model_horizon,model,horizon,r2,rmse,mape,picp,n,pass
+TFT-6h,TFT,6h,0.9854,0.1235,1.8461,66.67,3,PASS
+TFT-24h,TFT,24h,0.9859,0.0552,0.6695,100.0,3,PASS
+TFT-7d,TFT,7d,0.0891,0.318,4.5621,33.33,3,FAIL

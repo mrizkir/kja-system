@@ -1,0 +1,29 @@
+{
+  "model": "TFT",
+  "artifact": "tft_v1",
+  "encoder_length": 336,
+  "horizon": 168,
+  "horizons": [
+    6,
+    24,
+    168
+  ],
+  "hist_exog": [
+    "ph",
+    "temperature",
+    "salinity",
+    "turbidity",
+    "light_intensity"
+  ],
+  "futr_exog": [
+    "rainfall_forecast_mm"
+  ],
+  "stat_exog": [],
+  "quantiles": [
+    0.10000000149011612,
+    0.5,
+    0.8999999761581421
+  ],
+  "freq": "h",
+  "data": "training/dataset_madong.csv"
+}
